@@ -6,11 +6,7 @@ source "$(dirname "$0")/common.sh"
 
 PAD_MB="${PAD_MB:-0}"
 TEST_PAD_MB="${TEST_PAD_MB:-0}"
-if [[ "$TEST_PAD_MB" -gt 0 ]]; then
-  FIXTURE="$WORK/fixture-testpad${TEST_PAD_MB}"
-else
-  FIXTURE="$WORK/fixture-pad${PAD_MB}"
-fi
+FIXTURE="$(fixture_path "$PAD_MB" "$TEST_PAD_MB")"
 APP="$FIXTURE/App.app"
 rm -rf "$FIXTURE"
 mkdir -p "$APP/PlugIns/MemTests.xctest"
@@ -34,7 +30,7 @@ if [[ "$TEST_PAD_MB" -gt 0 ]]; then
   test_pad_args=(-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __pad -Xlinker "$FIXTURE/testpad.bin")
 fi
 
-echo "building host app (pad: ${PAD_MB} MB)..."
+echo "building host app (app pad: ${PAD_MB} MB, test pad: ${TEST_PAD_MB} MB)..."
 xcrun swiftc "$ROOT/Sources/AppMain.swift" \
   -parse-as-library \
   -sdk "$SDK_PATH" -target "$TARGET_TRIPLE" \

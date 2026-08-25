@@ -14,11 +14,7 @@ CONSOLE_MB="${CONSOLE_MB:-0}"
 ATTACH_MB="${ATTACH_MB:-0}"
 LABEL="${LABEL:-pad${PAD_MB}_console${CONSOLE_MB}_attach${ATTACH_MB}}"
 
-if [[ "$TEST_PAD_MB" -gt 0 ]]; then
-  FIXTURE="$WORK/fixture-testpad${TEST_PAD_MB}"
-else
-  FIXTURE="$WORK/fixture-pad${PAD_MB}"
-fi
+FIXTURE="$(fixture_path "$PAD_MB" "$TEST_PAD_MB")"
 [[ -d "$FIXTURE" ]] || { echo "fixture missing; run: PAD_MB=$PAD_MB TEST_PAD_MB=$TEST_PAD_MB scripts/01_build_fixture.sh" >&2; exit 1; }
 
 UDID=$(pick_simulator)
@@ -31,6 +27,7 @@ XCTESTRUN="$FIXTURE/run-$LABEL.xctestrun"
 cp "$FIXTURE/tests.xctestrun" "$XCTESTRUN"
 plutil -insert MemTests.TestingEnvironmentVariables.REPRO_CONSOLE_MB -string "$CONSOLE_MB" "$XCTESTRUN"
 plutil -insert MemTests.TestingEnvironmentVariables.REPRO_ATTACH_MB -string "$ATTACH_MB" "$XCTESTRUN"
+plutil -insert MemTests.TestingEnvironmentVariables.REPRO_SLEEP_S -string "${SLEEP_S:-0}" "$XCTESTRUN"
 
 echo "== case $LABEL (simulator $UDID, only-testing $ONLY_TEST)"
 set +e

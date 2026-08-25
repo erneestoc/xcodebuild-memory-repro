@@ -27,6 +27,16 @@ class MemTests: XCTestCase {
         }
     }
 
+    // Keeps the test session alive for REPRO_SLEEP_S seconds. Peak host-side
+    // memory is reached before the test body runs, so sleeping here holds the
+    // xcodebuild process at its peak long enough to inspect it
+    // (vmmap / heap / vm_stat) instead of having to catch a ~1 second window.
+    func testHoldOpen() {
+        let seconds = Int(ProcessInfo.processInfo.environment["REPRO_SLEEP_S"] ?? "0") ?? 0
+        guard seconds > 0 else { return }
+        Thread.sleep(forTimeInterval: TimeInterval(seconds))
+    }
+
     // Adds one REPRO_ATTACH_MB-megabyte attachment with
     // lifetime = .deleteOnSuccess on a passing test: the payload can never
     // be needed, yet host-side memory still grows ~1.4x its size.

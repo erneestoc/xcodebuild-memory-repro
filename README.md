@@ -38,17 +38,30 @@ RSS of `xcodebuild` + session helpers, from `results/summary.txt`:
 | test writes 4 MB to stdout | ~292 MB | ~14x the bytes written |
 | test adds one 64 MB `XCTAttachment`, `lifetime = .deleteOnSuccess`, test passes | ~421 MB | ~2.9x the payload that could never be needed |
 
-The dominant effect is the first one: host-side memory grows ~9 MB for
-every 1 MB of host app binary, before the app under test even launches
-(the RSS climb completes before the app process appears in the simulator).
-The growth is attributable to eager, in-memory symbolication reads of the
-test session's binaries (`XCTOutOfProcessSymbolicationService` machinery
-reading whole binaries into malloc'd memory rather than mapping them).
+The dominant effect is the first one, and it applies to every Mach-O in the
+session. Sweeping both binaries (`scripts/08_matrix.sh`) gives a linear,
+additive model that predicts held-out combinations to within 1 MB:
 
-For a production app with a 400-500 MB binary this is 3.5-4.5 GB of
-host-side memory per concurrent test session, independent of what the
-tests do — which, more than CPU, is what caps `-parallel-testing` /
-Bazel `--local_test_jobs` style simulator parallelism on CI hosts.
+```
+peak host RSS (MB) = 234 + 9.01 x (app binary MB) + 10.02 x (test bundle MB)
+```
+
+So a 400 MB app with a 700 MB test bundle costs **10.6 GB of host memory per
+test session**, before any test runs, independent of what the tests do — which,
+more than CPU, is what caps `-parallel-testing` / Bazel `--local_test_jobs`
+style simulator parallelism.
+
+`malloc_history` attributes the large allocations to whole-file reads
+performed to inspect Mach-O headers — `DVTMachOPlatformsForExecutable`,
+`DVTPlatformFamilyForMachO` and
+`-[DVTDevice supportsRunningExecutableAtPath:usingArchitecture:error:]`, each
+calling `NSData dataWithContentsOfFile:` without `NSDataReadingMappedIfSafe`
+and so allocating a private copy of the entire file to read its first few
+kilobytes. The pages are dirty and unreclaimable rather than mapped and
+evictable, which is why the symptom is swap.
+
+**See [`ANALYSIS.md`](ANALYSIS.md) for the full breakdown**, including the
+`footprint`/`vmmap`/`heap` evidence and what a fix would look like.
 
 ## Bisecting across Xcode versions
 
@@ -117,6 +130,11 @@ from 220 MB to ~2.5 GB.
 - `scripts/02_run_case.sh` — one measured run (`CONSOLE_MB`, `ATTACH_MB`, `ONLY_TEST` knobs)
 - `scripts/03..05_experiment_*.sh` — the three scaling experiments
 - `scripts/07_experiment_test_bundle_size.sh` — app binary vs `.xctest` binary
+- `scripts/08_matrix.sh` + `scripts/fit_matrix.py` — the (app x test bundle) matrix and its linear fit
+- `scripts/09_memory_map.sh` — holds a session at peak and captures `footprint`,
+  `vmmap`, `heap`, `malloc_history` and `vm_stat` deltas (`STACK_LOGGING=1` for
+  allocation backtraces)
+- `ANALYSIS.md` — where the memory goes, and why
 - `scripts/06_bisect_version.sh` — per-Xcode-version measurement for bisecting the regression
 - `scripts/measure_rss.py` — samples the process tree + session helpers, tracks
   peak, and separately reports new processes outside the tracked set (the

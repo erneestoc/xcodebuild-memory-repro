@@ -1,6 +1,6 @@
 # Feedback Assistant report (paste-ready)
 
-**Title:** xcodebuild test-without-building: host-side memory scales ~9x with host app binary size due to eager symbolication; console output and unused attachments also multiply-buffered
+**Title:** xcodebuild test-without-building: DVTFoundation reads entire Mach-O binaries into malloc'd memory to inspect their headers, costing ~9-10x binary size in dirty host RAM per test session
 
 **Area:** Developer Tools — Xcode / xcodebuild
 
@@ -20,22 +20,57 @@ require in-memory buffering:
    under test launches.** The `xcodebuild` process's RSS grows ~9 MB per 1 MB
    of host app binary, and ~10 MB per 1 MB of `.xctest` bundle binary.
    Timeline sampling shows the growth completes before the test host
-   process appears in the simulator, and padding the binary with inert
-   `__TEXT` bytes (no extra code, no extra dSYM content) reproduces it —
-   consistent with the test session's symbolication machinery
-   (XCTOutOfProcessSymbolicationService) eagerly reading whole binaries
-   into malloc'd memory instead of mmap'ing them and paging on demand.
-   For a production app with a 400-500 MB binary this is 3.5-4.5 GB of
-   host memory per test session — before any test runs, and the test
-   bundle's own size is charged on top at a slightly higher rate. The
-   multiplier was ~7x for both binaries in Xcode 16.1 (see below).
+   process appears in the simulator, and padding a binary with inert
+   `__TEXT` bytes (no code, no symbols, never executed or read) reproduces
+   it exactly. Sweeping both binaries gives a linear, additive model:
 
-   The cost is attached to the binaries themselves, not to the app process:
-   the padded bytes are inert `__TEXT` data that is never executed or read,
+       peak RSS (MB) = 234 + 9.01 x (app binary MB) + 10.02 x (test bundle MB)
+
+   fitted on single-variable rows and predicting held-out combinations to
+   within 1 MB, staying linear to 700 MB. For a 400 MB app with a 700 MB
+   test bundle that is **10.6 GB of host memory per test session**, before
+   any test runs.
+
+   The cost is attached to the binary *files*, not to anything executing:
    the simulated app's own RSS does not change when its binary grows, and
    the entire increase appears in the host-side `xcodebuild` process
    (220 MB -> 2528 MB at +256 MB of padding, with every other process in
    the session flat).
+
+   **The memory is dirty and private, not mapped file pages.** `footprint`
+   at plateau with a 512 MB test bundle shows 5133 MB of 5237 MB in
+   `MALLOC_LARGE`, 100% dirty, 0 bytes clean, 0 bytes reclaimable;
+   system-wide `vm_stat` over the same window grows ~7.6 GB anonymous
+   against ~226 MB file-backed. These pages cannot be evicted under
+   pressure, only compressed or swapped.
+
+   **Attribution.** With `MallocStackLogging` enabled, `malloc_history`
+   attributes the large blocks to whole-file reads performed to inspect
+   Mach-O headers:
+
+       DVTMachOPlatformsForExecutable                     -> 257 MB
+       DVTPlatformFamilyForMachO                          -> 257 MB
+       -[DVTDevice supportsRunningExecutableAtPath:
+                          usingArchitecture:error:]       -> 257 MB
+       DVTMachOPlatformsForExecutable (second occurrence) -> 257 MB
+
+   each via `dataWithContentsOfFile` ->
+   `-[NSData initWithContentsOfFile:options:maxLength:error:]` ->
+   `NSData._readBytes(fromPath:maxLength:bytes:length:didMap:...)`.
+
+   These call sites need only the Mach-O header and load commands — the
+   first few kilobytes — but `NSData dataWithContentsOfFile:` is called
+   without `NSDataReadingMappedIfSafe`, so Foundation allocates a private
+   buffer the size of the entire file. `heap` confirms four such
+   full-size buffers alive simultaneously (`525392KB[4]` for a 512 MB
+   bundle), and `vmmap` shows a further 3.0 GB of dirty pages in *empty*
+   `MALLOC_LARGE` regions: freed allocations whose pages were never
+   returned to the OS. Four live copies plus roughly six retained copies
+   accounts for the observed ~10x.
+
+   For completeness: symbolication is not the cause. `CoreSymbolicationDT`
+   objects are present (21,492 live `CSCppSymbolOwner`) but total single-digit
+   megabytes.
 
 2. **~14-26x the bytes a test writes to stdout** (multiplier grows with
    volume), retained for the duration of the session.
@@ -44,14 +79,18 @@ require in-memory buffering:
    an attachment with `lifetime = .deleteOnSuccess` added by a passing
    test still costs multiples of its payload in host memory.
 
-The practical impact is on CI: each concurrent `xcodebuild` test session
-carries gigabytes of host-side overhead for a large app, so simulator test
-parallelism is capped by host memory rather than CPU, even though the
-simulators themselves and the app under test are comparatively small.
+The practical impact is on CI and on large local projects: each concurrent
+`xcodebuild` test session carries gigabytes of host-side overhead, so
+simulator test parallelism is capped by host memory rather than CPU, even
+though the simulators themselves and the app under test are comparatively
+small. On a 48 GB machine, a 400 MB app with a 700 MB test bundle permits
+roughly four concurrent sessions. Because the pages are dirty rather than
+evictable, a project that previously fit in RAM degrades into swap once it
+crosses the threshold, rather than losing cache gracefully.
 
-There is no public option to disable or defer the symbolication work
-(nothing in `xcodebuild` flags, xctestrun keys, or documented environment
-variables changes it).
+There is no public option to disable, defer, or cache this work — nothing in
+`xcodebuild` flags, xctestrun keys, or documented environment variables
+changes it.
 
 ## Regression history
 
@@ -121,22 +160,36 @@ processes. Each experiment isolates one variable:
 - `scripts/07_experiment_test_bundle_size.sh` — moves the same 256 MB of
   padding between the host app binary and the `.xctest` bundle binary,
   showing the multiplier applies to both (9x and 10x respectively on 26.2).
+- `scripts/08_matrix.sh` — sweeps both binaries independently and together
+  and fits the linear model, holding out the mixed cases.
+- `STACK_LOGGING=1 scripts/09_memory_map.sh` — holds a session at peak and
+  captures `footprint`, `vmmap`, `heap`, `malloc_history` and `vm_stat`
+  deltas, producing the attribution above.
+
+`ANALYSIS.md` in the repository collects the full breakdown.
 
 ## Expected results
 
-- Host-side memory roughly independent of the size of the binaries under
-  test: symbolication inputs mapped (mmap) and read lazily, or symbolication
-  deferred until a failure actually needs symbolic frames — or at minimum an
-  opt-out for sessions that do their own symbolication.
+- Header inspection should read the Mach-O header and load commands, not the
+  whole file. Any of the following would materially reduce the peak:
+  1. read only the header/load commands;
+  2. pass `NSDataReadingMappedIfSafe` so the pages are clean and evictable
+     rather than dirty and swappable;
+  3. cache the per-path result so independent call sites do not each re-read
+     the same binary;
+  4. return large transient buffers to the OS rather than leaving dirty pages
+     in empty `MALLOC_LARGE` regions.
 - Console output streamed with O(1) buffering.
 - Attachment payloads that will be discarded (passing test,
   `.deleteOnSuccess`) not buffered in multiples on the host.
 
 ## Actual results
 
-Peak host-side RSS per session: `~235 MB + ~9x(host app binary bytes) +
-~10x(.xctest binary bytes) + ~14-26x(stdout bytes) +
-~1.4-3x(attachment bytes)`, concentrated in the `xcodebuild` process
-itself. Both binary terms were ~7x as recently as Xcode 16.1, so this has
-regressed rather than improved. Full per-case logs, per-process breakdowns,
-and RSS timelines are produced by the repro scripts under `results/`.
+Peak host-side RSS per session: `~234 MB + 9.01x(host app binary bytes) +
+10.02x(.xctest binary bytes) + ~14-26x(stdout bytes) +
+~1.4-3x(attachment bytes)`, concentrated in the `xcodebuild` process itself
+and consisting almost entirely of dirty, unreclaimable `MALLOC_LARGE` pages.
+Both binary terms were ~7x as recently as Xcode 16.1, so this has regressed
+rather than improved. Full per-case logs, per-process breakdowns, RSS
+timelines, and the memory-attribution captures are produced by the repro
+scripts under `results/`.
