@@ -1,0 +1,25 @@
+# Captured on 26.2 (25C56), Apple M4 Max
+# Xcode 26.2 (17C52)
+# Produced by: scripts/13_header_only.sh
+#
+How much of each binary must be read to learn its platforms/architectures?
+The Mach-O header is 32 bytes; the load commands follow immediately.
+
+/Users/ernesto/workspace/xcodebuild-memory-repro/work/fixture-app0-test256/App.app/PlugIns/MemTests.xctest/MemTests
+  file size                    269,036,736 bytes  (256.6 MB)
+  arch arm64             33 load commands, 3,512 bytes of them
+    platform iOSSimulator       recorded at byte offset 2,304, in 32 bytes
+  bytes needed for answer            3,544 bytes  (3.5 KB)
+  bytes actually read          269,036,736 bytes
+  read amplification                75,913x
+  same answer as otool -l   yes
+
+/Users/ernesto/workspace/xcodebuild-memory-repro/work/fixture-app0-test256/App.app/App
+  file size                        100,432 bytes  (0.1 MB)
+  arch arm64             35 load commands, 4,072 bytes of them
+    platform iOSSimulator       recorded at byte offset 2,824, in 32 bytes
+  bytes needed for answer            4,104 bytes  (4.0 KB)
+  bytes actually read              100,432 bytes
+  read amplification                    24x
+  same answer as otool -l   yes
+

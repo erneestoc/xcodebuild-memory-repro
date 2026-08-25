@@ -13,30 +13,91 @@ Measured across a full 5 x 5 grid of binary sizes; every combination the fit
 never saw is predicted to within 4 MB. A 400 MB app with a 700 MB test bundle
 costs 10.6 GB per session, and 700 MB in each costs 13.6 GB.
 
-**Cause.** Before running, the harness validates the built products against the
-run destination — `-[XCTHTestRunSpecification
-_validateBuiltProductsForRunDestination:]` down through
-`-[DVTDevice supportsRunningExecutableAtPath:usingArchitecture:error:]` and
-`DVTMachOPlatformsForExecutable`. It needs to know which platforms and
-architectures each Mach-O supports, which is recorded in the file's header and
-load commands. To read those few kilobytes it calls
-`NSData dataWithContentsOfFile:` with a hardcoded `options: 0` instead of
-`NSDataReadingMappedIfSafe`, so Foundation allocates a private copy of the
-entire file. This happens four times per session for the same file, nothing
-caches the answer between them, and roughly six more copies' worth of freed
-pages are never returned to the OS.
+## What is actually happening
 
-Everything above is measured, and the raw captures are committed under
-[`evidence/`](evidence/) so none of it has to be taken on trust:
+### 1. The question xcodebuild is asking
+
+Before running anything, the test harness validates the built products against
+the run destination: *can this app and this test bundle actually run on the
+simulator I was pointed at?* Answering that means knowing **which platforms and
+architectures each Mach-O binary was built for** — is this an iOS-simulator
+arm64 binary, or a device build, or macOS?
+
+The call chain is visible in the allocation stacks:
+
+```
+-[XCTHTestRunSpecification _validateBuiltProductsForRunDestination:]
+  -[XCTHTestRunSpecification _isValidBundleAtFilePath:forRunDestination:]
+    -[DVTDevice supportsRunningExecutableAtPath:usingArchitecture:error:]
+      DVTPlatformFamilyForMachO  /  DVTMachOPlatformsForExecutable
+```
+
+### 2. Where that answer actually lives
+
+In the Mach-O format, this is recorded at the very front of the file. The
+header is 32 bytes, the load commands follow immediately, and the platform is
+one `LC_BUILD_VERSION` command inside them.
+
+`scripts/13_header_only.sh` parses it out of a bounded prefix and checks the
+result against `otool -l` reading the whole file
+([`evidence/header_only.txt`](evidence/header_only.txt)). For a 257 MB test
+bundle binary:
+
+```
+file size                    269,036,736 bytes  (256.6 MB)
+arch arm64             33 load commands, 3,512 bytes of them
+  platform iOSSimulator       recorded at byte offset 2,304, in 32 bytes
+bytes needed for answer            3,544 bytes  (3.5 KB)
+bytes actually read          269,036,736 bytes
+read amplification                75,913x
+same answer as otool -l   yes
+```
+
+The datum being sought is **32 bytes at offset 2,304**. Everything required to
+find and read it — header plus all load commands — is **3.5 KB**, and it is
+always at the start of the file regardless of how large the file is. The prefix
+yields the identical answer to parsing the entire binary.
+
+### 3. What it does instead
+
+It reads the whole file. `NSData dataWithContentsOfFile:` is called with an
+options argument of `0`, so Foundation allocates a private heap buffer the size
+of the entire binary and copies every byte into it — 257 MB to consult 32 of
+them, a **75,913x read amplification**. At 700 MB it is over 200,000x.
+
+Two things make it worse than a single wasteful read:
+
+- **It happens four times per session for the same file.** Three of the four
+  stacks pass through `supportsRunningExecutableAtPath:` for the same path
+  within one validation, and nothing caches the answer between them.
+- **The memory is dirty, not mapped.** `NSData` offers
+  `NSDataReadingMappedIfSafe`, which would `mmap` the file so its pages are
+  clean and file-backed: the kernel could then drop them instantly under memory
+  pressure. With options `0` the pages are anonymous and dirty, so they can
+  only be compressed or written to swap. This is why the symptom is swapping
+  rather than harmless page-cache growth.
+
+On top of that, roughly six further copies' worth of freed buffers are never
+returned to the OS, sitting in empty `MALLOC_LARGE` regions.
+
+Only the binaries **named in the `.xctestrun`** are validated this way, which
+is why the same bytes placed in an embedded dynamic library cost nothing at
+all — see [Which binaries are charged](#which-binaries-are-charged).
+
+### 4. Everything above is measured
+
+Raw captures are committed under [`evidence/`](evidence/) so none of it has to
+be taken on trust:
 
 | Question | Answer | Where to look |
 |---|---|---|
-| How much memory, exactly? | linear and additive in both binaries, predicting held-out cells to ~1 MB | [`evidence/matrix.csv`](evidence/matrix.csv) |
-| Whose memory is it? | `xcodebuild`'s own, 220 MB → 2528 MB; the app under test does not grow | [`evidence/memmap-*/footprint.txt`](evidence/) |
+| How much memory, exactly? | linear and additive in both binaries; 16 held-out cells predicted to within 4 MB | [`evidence/matrix.csv`](evidence/matrix.csv) |
+| Whose memory is it? | `xcodebuild`'s own, 233 MB → 2542 MB at +256 MB; the app under test does not grow | [`evidence/memmap-*/footprint.txt`](evidence/) |
 | Why does it cause swap? | anonymous and dirty (~7.6 GB) not file-backed (~226 MB) | [`evidence/memmap-*/vm_stat.delta.txt`](evidence/) |
 | What are the allocations? | four simultaneous full-size buffers, plus ~3 GB freed-but-resident | [`evidence/memmap-*/heap.excerpt.txt`](evidence/) |
-| What allocates them? | whole-file reads for Mach-O header inspection | [`evidence/memmap-*/malloc_history.large.txt`](evidence/) |
-| Is that really what the code does? | `mov x3, #0x0` — options argument, verified against the bytes on disk | [`evidence/disassembly.txt`](evidence/disassembly.txt) |
+| What allocates them? | run-destination validation reading whole files for their headers | [`evidence/memmap-*/malloc_history.large.txt`](evidence/) |
+| Is reading the whole file necessary? | no — 3.5 KB gives the identical answer, 75,913x less | [`evidence/header_only.txt`](evidence/header_only.txt) |
+| Is that really what the code does? | `mov x3, #0x0` — the options argument, decoded from the bytes on disk | [`evidence/disassembly.txt`](evidence/disassembly.txt) |
 | Is the cost avoidable? | the same bytes in an embedded dylib cost 0.00x | [`evidence/placement/`](evidence/) |
 | Has it got worse? | 7.01x in Xcode 16.1 → 9x/10x from 16.4 | [`evidence/bisect.csv`](evidence/bisect.csv) |
 
@@ -200,6 +261,9 @@ of any single read becoming more expensive.
   allocation backtraces)
 - `scripts/10_experiment_dylib.sh` — app binary vs test bundle vs embedded dylib
 - `scripts/11_experiment_discovery.sh` — is a dylib-hosted `XCTestCase` discovered?
+- `scripts/12_disassemble_dvt.sh` — dumps and byte-verifies the `options` argument
+- `scripts/13_header_only.sh` — how few bytes actually answer the question
+- `scripts/collect_evidence.sh` — refreshes `evidence/` from `results/`
 - `ANALYSIS.md` — where the memory goes, and why
 - `scripts/06_bisect_version.sh` — per-Xcode-version measurement for bisecting the regression
 - `scripts/measure_rss.py` — samples the process tree + session helpers, tracks

@@ -98,11 +98,30 @@ require in-memory buffering:
            NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:…)
              _malloc_zone_malloc_instrumented_or_legacy
 
-   Each of these needs only the Mach-O header and load commands — the
-   first few kilobytes — to establish which platforms and architectures
-   the binary supports. But `NSData dataWithContentsOfFile:` is called
-   without `NSDataReadingMappedIfSafe`, so Foundation allocates a private
-   buffer the size of the entire file.
+   Each of these needs only the Mach-O header and load commands to
+   establish which platforms and architectures the binary supports, and
+   those sit at the very front of the file. Parsing the answer out of a
+   bounded prefix and checking it against `otool -l` over the whole file
+   (`scripts/13_header_only.sh`) gives, for the same 257 MB test bundle:
+
+       file size                    269,036,736 bytes  (256.6 MB)
+       arch arm64             33 load commands, 3,512 bytes of them
+         platform iOSSimulator       recorded at byte offset 2,304, in 32 bytes
+       bytes needed for answer            3,544 bytes  (3.5 KB)
+       bytes actually read          269,036,736 bytes
+       read amplification                75,913x
+       same answer as otool -l   yes
+
+   The datum sought is 32 bytes at offset 2,304; header plus every load
+   command is 3.5 KB; and the prefix yields an answer identical to parsing
+   the entire binary. Reading the file in full is therefore not merely
+   inefficient but unnecessary — a 75,913x read amplification here, and
+   over 200,000x at 700 MB, growing with file size while the useful data
+   stays fixed at a few kilobytes.
+
+   But `NSData dataWithContentsOfFile:` is called without
+   `NSDataReadingMappedIfSafe`, so Foundation allocates a private buffer
+   the size of the entire file and copies every byte into it.
 
    Two things compound it. The reads are **redundant with each other**:
    [1], [2] and [3] pass through `supportsRunningExecutableAtPath:` for the

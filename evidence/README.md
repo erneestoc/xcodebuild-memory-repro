@@ -17,6 +17,7 @@ or `scripts/run_all.sh` to do both.
 | Anonymous rather than file-backed, hence swap | `memmap-*/vm_stat.delta.txt` |
 | Four full-size copies are live simultaneously | `memmap-*/heap.excerpt.txt` |
 | The allocations come from Mach-O header inspection | `memmap-*/malloc_history.large.txt` |
+| Reading the whole file is unnecessary: 3.5 KB gives the same answer | `header_only.txt` |
 | The read passes `options: 0` instead of a mapped read | `disassembly.txt` |
 | Only xctestrun-named binaries are charged; dylibs cost nothing | `placement/*.measure.txt` |
 | A dylib-hosted XCTestCase is still discovered and run | `discovery/test_run.txt` |
@@ -45,6 +46,11 @@ padded binary's size. The class table below it shows what everything else is.
 **`memmap-*/malloc_history.large.txt`** — every live allocation over 50 MB
 with the innermost frames of its allocating stack. This is the file that
 identifies the cause; the full capture is ~100 MB and is excerpted here.
+
+**`header_only.txt`** — where the platform/architecture data actually sits in
+each Mach-O, how many bytes are needed to reach it, the resulting read
+amplification, and a check that the bounded prefix yields the same answer as
+`otool -l` parsing the whole file.
 
 **`disassembly.txt`** — the shipped `DVTFoundation` code, with the raw
 instruction bytes at the options argument decoded and verified against the

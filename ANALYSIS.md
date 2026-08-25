@@ -175,8 +175,37 @@ innermost Foundation frames are identical in all four and elided here:
 The purpose is narrow and identical throughout: establishing **which platforms
 and architectures a Mach-O supports**, so the harness can decide whether the
 bundle can run on the chosen destination, plus one query for an iOSMac
-property. That answer lives in the Mach-O header and load commands — the first
-few kilobytes of the file.
+property.
+
+### How much of the file that actually requires
+
+In the Mach-O format this is recorded at the very front of the file: a 32-byte
+header, then the load commands, with the platform carried in a single
+`LC_BUILD_VERSION` command among them. Its position does not move as the
+binary grows.
+
+`scripts/13_header_only.sh` parses the answer out of a bounded prefix and
+checks it against `otool -l` reading the whole file
+([`evidence/header_only.txt`](evidence/header_only.txt)). For the 257 MB test
+bundle binary used above:
+
+```
+file size                    269,036,736 bytes  (256.6 MB)
+arch arm64             33 load commands, 3,512 bytes of them
+  platform iOSSimulator       recorded at byte offset 2,304, in 32 bytes
+bytes needed for answer            3,544 bytes  (3.5 KB)
+bytes actually read          269,036,736 bytes
+read amplification                75,913x
+same answer as otool -l   yes
+```
+
+The datum sought is **32 bytes at offset 2,304**; the header and every load
+command together are **3.5 KB**; and the prefix yields an answer identical to
+parsing the whole binary. Reading the file in full is therefore not merely
+inefficient, it is unnecessary in a way that is easy to verify: a 75,913x read
+amplification here, and over 200,000x at 700 MB. Because the amplification
+grows with file size while the useful data stays fixed at a few kilobytes, the
+waste scales with exactly the number teams cannot control.
 
 To obtain it, each path calls `NSData dataWithContentsOfFile:` without
 `NSDataReadingMappedIfSafe`, so Foundation allocates a private buffer the size

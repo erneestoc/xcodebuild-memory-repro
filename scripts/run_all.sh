@@ -25,6 +25,11 @@ source "$(dirname "$0")/common.sh"
 "$ROOT/scripts/10_experiment_dylib.sh"
 "$ROOT/scripts/11_experiment_discovery.sh"
 
+# 2b. How little of a Mach-O actually has to be read to answer the question
+#     that triggers the whole-file reads.
+"$ROOT/scripts/13_header_only.sh" > "$RESULTS/header_only.txt"
+cat "$RESULTS/header_only.txt"
+
 if [[ -z "${QUICK:-}" ]]; then
   # 3. The full (app size x test bundle size) matrix and its linear fit.
   "$ROOT/scripts/08_matrix.sh"

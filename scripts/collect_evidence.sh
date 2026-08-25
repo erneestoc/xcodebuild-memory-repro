@@ -29,6 +29,13 @@ copy_csv() {
 copy_csv matrix.csv
 copy_csv bisect.csv
 
+# --- how little of a Mach-O actually has to be read ---------------------
+if [[ -f "$RESULTS/header_only.txt" ]]; then
+  hdr "$EV/header_only.txt" "scripts/13_header_only.sh"
+  cat "$RESULTS/header_only.txt" >> "$EV/header_only.txt"
+  echo "wrote evidence/header_only.txt"
+fi
+
 # --- memory attribution -------------------------------------------------
 for d in "$RESULTS"/memmap-*; do
   [[ -d "$d" ]] || continue
