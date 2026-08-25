@@ -9,12 +9,13 @@ source "$(dirname "$0")/common.sh"
 
 PAD_MB="${PAD_MB:-0}"
 TEST_PAD_MB="${TEST_PAD_MB:-0}"
-ONLY_TEST="${ONLY_TEST:-MemTests/MemTests/testTrivial}"
+# Set ONLY_TEST="" to run the whole bundle (used for test-discovery checks).
+ONLY_TEST="${ONLY_TEST-MemTests/MemTests/testTrivial}"
 CONSOLE_MB="${CONSOLE_MB:-0}"
 ATTACH_MB="${ATTACH_MB:-0}"
 LABEL="${LABEL:-pad${PAD_MB}_console${CONSOLE_MB}_attach${ATTACH_MB}}"
 
-FIXTURE="$(fixture_path "$PAD_MB" "$TEST_PAD_MB")"
+FIXTURE="$(fixture_path "$PAD_MB" "$TEST_PAD_MB" "${DYLIB_PAD_MB:-0}")"
 [[ -d "$FIXTURE" ]] || { echo "fixture missing; run: PAD_MB=$PAD_MB TEST_PAD_MB=$TEST_PAD_MB scripts/01_build_fixture.sh" >&2; exit 1; }
 
 UDID=$(pick_simulator)
@@ -29,14 +30,16 @@ plutil -insert MemTests.TestingEnvironmentVariables.REPRO_CONSOLE_MB -string "$C
 plutil -insert MemTests.TestingEnvironmentVariables.REPRO_ATTACH_MB -string "$ATTACH_MB" "$XCTESTRUN"
 plutil -insert MemTests.TestingEnvironmentVariables.REPRO_SLEEP_S -string "${SLEEP_S:-0}" "$XCTESTRUN"
 
-echo "== case $LABEL (simulator $UDID, only-testing $ONLY_TEST)"
+only_args=()
+[[ -n "$ONLY_TEST" ]] && only_args=(-only-testing:"$ONLY_TEST")
+echo "== case $LABEL (simulator $UDID, only-testing ${ONLY_TEST:-<all>})"
 set +e
 python3 "$ROOT/scripts/measure_rss.py" "$RESULTS/$LABEL.timeline.csv" \
   xcodebuild test-without-building \
     -xctestrun "$XCTESTRUN" \
     -destination "id=$UDID" \
     -derivedDataPath "$RUN_DIR/derived_data" \
-    -only-testing:"$ONLY_TEST" \
+    ${only_args[@]+"${only_args[@]}"} \
     > "$RESULTS/$LABEL.log" 2>&1
 status=$?
 set -e

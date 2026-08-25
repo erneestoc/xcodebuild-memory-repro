@@ -10,9 +10,11 @@ SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 PLATFORM_DIR="$(dirname "$(dirname "$(dirname "$SDK_PATH")")")"
 TARGET_TRIPLE="arm64-apple-ios16.0-simulator"
 
-# Fixture directory for a given (app pad MB, test bundle pad MB) pair.
+# Fixture directory for a given (app pad, test bundle pad, embedded dylib pad).
 fixture_path() {
-  echo "$WORK/fixture-app${1:-0}-test${2:-0}"
+  local suffix=""
+  [[ "${3:-0}" -gt 0 ]] && suffix="-dylib${3}"
+  echo "$WORK/fixture-app${1:-0}-test${2:-0}${suffix}"
 }
 
 # Boots (if necessary) and echoes the UDID of a simulator to test on.

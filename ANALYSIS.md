@@ -207,7 +207,65 @@ Consequences that follow directly:
   degrades sharply into swap. Binary growth over time and the 16.x multiplier
   increase compound here.
 
-## 9. What a fix would look like
+## 9. Which Mach-Os are charged, and the mitigation that follows
+
+The cost does not apply to every Mach-O in the app bundle. Placing the same
+256 MB of inert padding in three different binaries within one bundle
+(`scripts/10_experiment_dylib.sh`):
+
+| Padded binary | Location | Peak | Multiplier |
+|---------------|----------|-----:|-----------:|
+| baseline      | —        | 232 MB | — |
+| host app      | `App.app/App` (xctestrun `TestHostPath`) | 2543 MB | 9.03x |
+| test bundle   | `App.app/PlugIns/*.xctest/MemTests` (`TestBundlePath`) | 2799 MB | 10.03x |
+| **embedded dylib** | `App.app/Frameworks/libPadLib.dylib` | **231 MB** | **0.00x** |
+
+In the dylib case the app links the library (`@rpath/libPadLib.dylib` appears
+in its load commands via `-needed-l`, so dyld must resolve it at launch), the
+app launches, and the test passes — the 257 MB library is genuinely loaded.
+It simply costs nothing on the host.
+
+This is strong evidence that the cost is not inherent to having large binaries
+in a test session. It follows the paths named in the `.xctestrun`
+(`TestHostPath`, `TestBundlePath`), which are the arguments handed to
+`DVTMachOPlatformsForExecutable`, `DVTPlatformFamilyForMachO` and
+`-[DVTDevice supportsRunningExecutableAtPath:usingArchitecture:error:]`.
+Binaries reached later by dyld are never probed.
+
+**Mitigation: move code out of the app and test binaries into embedded
+dynamic frameworks.** Every megabyte relocated from the app binary saves
+~9 MB of host RAM per session, and every megabyte moved out of the `.xctest`
+binary saves ~10 MB. A project with a 400 MB app and a 700 MB test bundle
+pays 10.6 GB per session; the same code split into dynamic frameworks with
+thin app and test binaries approaches the ~234 MB baseline.
+
+This works today, needs no cooperation from Apple, and is a normal
+modularisation change rather than a hack.
+
+### Test discovery still works
+
+The obvious worry is that XCTest discovers tests by enumerating the test
+bundle, so moving code out might hide it. `scripts/11_experiment_discovery.sh`
+checks this directly by compiling an `XCTestCase` subclass into
+`App.app/Frameworks/libDylibTests.dylib`, linking the `.xctest` binary against
+it, and running the whole bundle with no `-only-testing`:
+
+```
+Test Suite 'Frameworks' started
+Test Suite 'DylibHostedTests' started
+Test Case '-[DylibTests.DylibHostedTests testFromDylib]' passed
+```
+
+The subclass is discovered and run, appearing as its own suite alongside the
+bundle's own tests. So it is not only the tests' dependencies that can move
+out: test code itself can live in a dynamic library, as long as the library
+is linked by the test bundle so dyld loads it with the bundle.
+
+In practice most of the weight in a large `.xctest` is statically linked app
+modules and third-party dependencies rather than the test classes, so moving
+those alone captures most of the saving.
+
+## 10. What a fix would look like
 
 In rough order of impact and ease:
 
@@ -221,7 +279,43 @@ In rough order of impact and ease:
 Any one of these would materially reduce the peak; the first would
 effectively eliminate the term.
 
-## 10. Reproducing
+Option 2 is a single instruction. In `DVTFoundation`'s shared
+`_dataWithContentsOfFile` helper, the options argument is a hardcoded zero:
+
+```
+mov  x3, #0x0                                              ; options = 0
+bl   "_objc_msgSend$initWithContentsOfFile:options:error:"
+```
+
+`NSDataReadingMappedIfSafe` is `1 << 3`. Passing it would leave the logic
+unchanged while making the pages file-backed, clean and evictable instead of
+anonymous, dirty and swappable — which alone removes the swap pressure.
+Because all three public entry points funnel through this one helper, fixing
+it there fixes every call site at once. (This is an observation about the
+shipped code, offered to make the report actionable; patching a local Xcode
+is not a supported workaround, see below.)
+
+## 11. Why local patching is not a workaround
+
+For completeness, since it is a natural question: modifying `xcodebuild`'s
+behaviour on a stock macOS install is blocked twice over.
+
+- `xcodebuild` is signed with `flags=0x2000 (library-validation)`, so
+  `DYLD_INSERT_LIBRARIES` is ignored and no self-signed dylib can be loaded
+  into it for swizzling. Clearing that would mean re-signing `xcodebuild`
+  itself ad hoc, discarding its Apple identity.
+- macOS App Management (TCC) prevents modifying files inside an application
+  bundle. `touch`, `cp` and `codesign` inside `Xcode.app` all fail with
+  `Operation not permitted` even for a copy the user expanded themselves,
+  unless the terminal is granted App Management in
+  System Settings > Privacy & Security, or SIP is disabled.
+
+A patched Xcode would also break the signature chain, revert on every update,
+and leave an ad-hoc `xcodebuild` whose other behaviour is unverified. The
+dynamic-framework mitigation in section 9 achieves the same result with none
+of that, and is the recommended path.
+
+## 12. Reproducing
 
 ```sh
 scripts/08_matrix.sh                                   # the cost model

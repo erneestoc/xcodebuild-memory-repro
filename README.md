@@ -60,8 +60,23 @@ and so allocating a private copy of the entire file to read its first few
 kilobytes. The pages are dirty and unreclaimable rather than mapped and
 evictable, which is why the symptom is swap.
 
+Only the binaries named in the `.xctestrun` are charged. The same 256 MB of
+padding placed in an embedded dynamic library costs **nothing**:
+
+| Padded binary | Peak | Multiplier |
+|---------------|-----:|-----------:|
+| baseline | 232 MB | — |
+| `App.app/App` | 2543 MB | 9.03x |
+| `App.app/PlugIns/*.xctest/MemTests` | 2799 MB | 10.03x |
+| `App.app/Frameworks/libPadLib.dylib` | 231 MB | **0.00x** |
+
+So moving code into embedded dynamic frameworks avoids the cost entirely, and
+an `XCTestCase` subclass hosted in such a library is still discovered and run
+(`scripts/11_experiment_discovery.sh`).
+
 **See [`ANALYSIS.md`](ANALYSIS.md) for the full breakdown**, including the
-`footprint`/`vmmap`/`heap` evidence and what a fix would look like.
+`footprint`/`vmmap`/`heap`/`malloc_history` evidence, the mitigation, and what
+a fix would look like.
 
 ## Bisecting across Xcode versions
 
@@ -134,6 +149,8 @@ from 220 MB to ~2.5 GB.
 - `scripts/09_memory_map.sh` — holds a session at peak and captures `footprint`,
   `vmmap`, `heap`, `malloc_history` and `vm_stat` deltas (`STACK_LOGGING=1` for
   allocation backtraces)
+- `scripts/10_experiment_dylib.sh` — app binary vs test bundle vs embedded dylib
+- `scripts/11_experiment_discovery.sh` — is a dylib-hosted `XCTestCase` discovered?
 - `ANALYSIS.md` — where the memory goes, and why
 - `scripts/06_bisect_version.sh` — per-Xcode-version measurement for bisecting the regression
 - `scripts/measure_rss.py` — samples the process tree + session helpers, tracks

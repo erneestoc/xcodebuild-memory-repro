@@ -72,6 +72,24 @@ require in-memory buffering:
    objects are present (21,492 live `CSCppSymbolOwner`) but total single-digit
    megabytes.
 
+   **The cost is avoidable, which shows it is not inherent.** Placing the same
+   256 MB of padding in an embedded dynamic library
+   (`App.app/Frameworks/libPadLib.dylib`, linked by the app so dyld must load
+   it) instead of in the app or test binary costs nothing at all:
+
+   | Padded binary | Peak | Multiplier |
+   |---------------|-----:|-----------:|
+   | baseline | 232 MB | — |
+   | `App.app/App` (xctestrun `TestHostPath`) | 2543 MB | 9.03x |
+   | `App.app/PlugIns/*.xctest/MemTests` (`TestBundlePath`) | 2799 MB | 10.03x |
+   | `App.app/Frameworks/libPadLib.dylib` | **231 MB** | **0.00x** |
+
+   The same bytes, loaded into the same running test session, cost 10x in one
+   Mach-O and 0x in another. Only the paths named in the `.xctestrun` are
+   probed; binaries reached later by dyld are not. Whatever the probe
+   establishes about `TestHostPath` and `TestBundlePath` is evidently not
+   required for the dynamic libraries those binaries go on to load.
+
 2. **~14-26x the bytes a test writes to stdout** (multiplier grows with
    volume), retained for the duration of the session.
 
@@ -165,6 +183,10 @@ processes. Each experiment isolates one variable:
 - `STACK_LOGGING=1 scripts/09_memory_map.sh` — holds a session at peak and
   captures `footprint`, `vmmap`, `heap`, `malloc_history` and `vm_stat`
   deltas, producing the attribution above.
+- `scripts/10_experiment_dylib.sh` — puts the same padding in the app binary,
+  the test bundle binary and an embedded dylib, showing 9x / 10x / 0x.
+- `scripts/11_experiment_discovery.sh` — confirms an `XCTestCase` subclass
+  hosted in an embedded dylib is still discovered and run.
 
 `ANALYSIS.md` in the repository collects the full breakdown.
 
