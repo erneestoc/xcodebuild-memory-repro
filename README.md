@@ -50,11 +50,36 @@ host-side memory per concurrent test session, independent of what the
 tests do — which, more than CPU, is what caps `-parallel-testing` /
 Bazel `--local_test_jobs` style simulator parallelism on CI hosts.
 
+## Bisecting across Xcode versions
+
+To find which Xcode release introduced (or grew) the binary-size multiplier,
+run the same measurement under each installed Xcode:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode_16.1.app scripts/06_bisect_version.sh
+DEVELOPER_DIR=/Applications/Xcode_26.2.app scripts/06_bisect_version.sh
+```
+
+Each invocation rebuilds the fixture with that toolchain's SDK, pairs it with
+a simulator runtime matching the SDK's major version (downloading one via
+`xcodebuild -downloadPlatform iOS` if needed), measures the pad-0 and pad-256
+cases on a dedicated device, and appends one row to `results/bisect.csv`:
+
+```
+date,xcode_version,xcode_build,macos,runtime,peak_pad0_mb,peak_pad256_mb,slope_mb_per_mb
+```
+
+`slope_mb_per_mb` is the per-version comparison metric: extra host-side MB per
+MB of host app binary. It is independent of machine size and fixture choice.
+A freshly expanded Xcode may first need
+`sudo DEVELOPER_DIR=<path> xcodebuild -runFirstLaunch`.
+
 ## Files
 
 - `Sources/AppMain.swift`, `Sources/Tests.swift` — the fixture app + tests
 - `scripts/01_build_fixture.sh` — builds app/bundle/xctestrun (`PAD_MB` pads the app binary)
 - `scripts/02_run_case.sh` — one measured run (`CONSOLE_MB`, `ATTACH_MB`, `ONLY_TEST` knobs)
 - `scripts/03..05_experiment_*.sh` — the three scaling experiments
+- `scripts/06_bisect_version.sh` — per-Xcode-version measurement for bisecting the regression
 - `scripts/measure_rss.py` — samples the process tree + session helpers, tracks peak
 - `FEEDBACK.md` — the Feedback Assistant report this repository accompanies
