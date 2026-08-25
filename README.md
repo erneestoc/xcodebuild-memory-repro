@@ -74,6 +74,22 @@ MB of host app binary. It is independent of machine size and fixture choice.
 A freshly expanded Xcode may first need
 `sudo DEVELOPER_DIR=<path> xcodebuild -runFirstLaunch`.
 
+### Measured so far
+
+macOS 26.2 (25C56), Apple silicon, 256 MB of `__TEXT` padding:
+
+| Xcode | Build | Runtime | Unpadded | +256 MB | Multiplier |
+|-------|-------|---------|----------|---------|------------|
+| 16.1  | 16B40 | iOS 18.6 | 229 MB | 2025 MB | **7.02x** |
+| 16.4  | 16F6  | iOS 18.6 | 200 MB | 2508 MB | **9.02x** |
+| 26.2  | 17C52 | iOS 26.2 | 232 MB | 2543 MB | **9.03x** |
+
+Repeat runs agree to within 1-2 MB. The multiplier rose ~29% between 16.1
+and 16.4 and has been flat since; 16.2 and 16.3 are not yet measured, so the
+change lands somewhere in 16.2...16.4. The 16.1/16.4 rows share a macOS
+build, a simulator runtime and a fixture, so the toolchain is the only
+variable between them.
+
 ## Files
 
 - `Sources/AppMain.swift`, `Sources/Tests.swift` — the fixture app + tests
