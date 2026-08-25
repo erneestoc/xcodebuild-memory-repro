@@ -1,9 +1,31 @@
 # Where the memory goes
 
 This document records what `xcodebuild test-without-building` actually does
-with host memory, measured rather than inferred. All figures are from an
-Apple M4 Max, 48 GB, macOS 26.2 (25C56), Xcode 26.2 (17C52), reproduced by the
-scripts in this repository.
+with host memory, measured rather than inferred. Every number below is
+reproducible with the scripts in this repository.
+
+## 0. Summary
+
+- Running simulator tests costs
+  `234 MB + 9.01 x (app binary MB) + 10.02 x (test bundle MB)` of host RAM per
+  test session, linear to at least 700 MB, additive across the two binaries,
+  and predicting held-out combinations to within 1 MB. A 400 MB app with a
+  700 MB test bundle costs **10.6 GB per session** before a single test runs.
+- The memory belongs to the `xcodebuild` process, not the app under test, and
+  is **dirty, private and unreclaimable** (`MALLOC_LARGE`, 0 bytes clean,
+  0 reclaimable). It cannot be evicted under pressure, only compressed or
+  swapped — which is why the symptom is swap rather than harmless cache use.
+- The cause is not symbolication. `DVTFoundation` reads **entire Mach-O files
+  into malloc'd memory in order to inspect their headers**, via three separate
+  entry points that share one helper, and that helper passes `options: 0`
+  (a hardcoded `mov x3, #0x0`) instead of `NSDataReadingMappedIfSafe`.
+  Four full copies are live at once and roughly six more copies' worth of
+  freed pages are never returned to the OS.
+- The cost applies only to the binaries named in the `.xctestrun`. The same
+  bytes in an embedded dynamic library cost **0.00x**, which both proves the
+  cost is not inherent and provides a mitigation available today.
+- It has regressed: the multiplier was a uniform **7.01x** for both binaries in
+  Xcode 16.1 and is **9x / 10x** from 16.4 through 26.2.
 
 ## 1. The cost model
 
@@ -173,10 +195,27 @@ by 16.4, which is what adding call sites over time looks like.
 | 16.4  | 16F6  | 9.02x | (not measured) |
 | 26.2  | 17C52 | 9.00x / 9.02x | 10.01x / 10.02x |
 
-Measured on one machine, same fixture, same simulator runtime for the two
-16.x rows. Every figure was reproduced across independent runs agreeing to
-within 1-2 MB. Xcode 16.2 and 16.3 have not been measured, so the step lands
-somewhere in 16.2...16.4.
+Raw measurements behind the app-binary column, each an independent run
+including a fresh fixture build and a fresh simulator device:
+
+| Xcode | Build | Runtime | Unpadded | +256 MB | Multiplier |
+|-------|-------|---------|---------:|--------:|-----------:|
+| 16.1  | 16B40 | iOS 18.6 | 229 MB | 2025 MB | 7.02x |
+| 16.1  | 16B40 | iOS 18.6 | 228 MB | 2026 MB | 7.02x |
+| 16.4  | 16F6  | iOS 18.6 | 200 MB | 2508 MB | 9.02x |
+| 16.4  | 16F6  | iOS 18.6 | 200 MB | 2510 MB | 9.02x |
+| 16.4  | 16F6  | iOS 18.6 | 198 MB | 2507 MB | 9.02x |
+| 26.2  | 17C52 | iOS 26.2 | 232 MB | 2543 MB | 9.03x |
+
+The 16.1 and 16.4 rows share a macOS build, a simulator runtime and a fixture
+size, so the toolchain is the only variable between them. Xcode 16.2 and 16.3
+have not been measured, so the step lands somewhere in 16.2...16.4.
+
+Two things changed at once. The multiplier rose by ~29%, and the two binaries
+stopped costing the same: 16.1 charged an identical 7.01x for app and test
+bundle bytes, while 26.2 charges 9x and 10x. That is the signature of call
+sites being added — roughly two more whole-file reads for the app and three
+for the test bundle — rather than of any single read becoming more expensive.
 
 ## 8. Practical consequences
 
@@ -257,9 +296,27 @@ Test Case '-[DylibTests.DylibHostedTests testFromDylib]' passed
 ```
 
 The subclass is discovered and run, appearing as its own suite alongside the
-bundle's own tests. So it is not only the tests' dependencies that can move
-out: test code itself can live in a dynamic library, as long as the library
-is linked by the test bundle so dyld loads it with the bundle.
+bundle's own tests.
+
+Static enumeration sees it too. `xcodebuild -enumerate-tests`, the interface
+used to list tests without running them, reports:
+
+```json
+{ "kind": "class", "name": "DylibHostedTests",
+  "children": [ { "kind": "test", "name": "testFromDylib()" } ] }
+```
+
+**One caveat, untested.** Both checks above go through the same runtime path:
+enumeration launches the test host and asks the loaded images what tests
+exist. Xcode's own test navigator is populated differently — from the source
+index (IndexStoreDB) built from the project's targets — so a class in a
+framework target may or may not get the same in-editor affordances (the run
+diamonds, per-test re-run) even though `xcodebuild` and CI enumerate and run
+it correctly. That link has not been verified here, because it requires a real
+Xcode project and the GUI rather than a scripted fixture. Anyone adopting this
+at scale should confirm it in their own project before moving test classes;
+moving the tests' *dependencies* carries no such uncertainty, is where nearly
+all the bytes are, and is the safer first step.
 
 In practice most of the weight in a large `.xctest` is statically linked app
 modules and third-party dependencies rather than the test classes, so moving
@@ -315,10 +372,45 @@ and leave an ad-hoc `xcodebuild` whose other behaviour is unverified. The
 dynamic-framework mitigation in section 9 achieves the same result with none
 of that, and is the recommended path.
 
-## 12. Reproducing
+## 12. Method and environment
+
+All measurements: Apple M4 Max, 48 GB, macOS 26.2 (25C56). Toolchains
+Xcode 26.2 (17C52), 16.4 (16F6), 16.1 (16B40); simulator runtimes iOS 26.2
+(23C54) and iOS 18.6 (22G86).
+
+The fixture is deliberately minimal and built without an Xcode project: a
+UIKit app and an app-hosted XCTest bundle compiled with `swiftc`, plus a
+hand-written `.xctestrun`. Size is varied by linking an inert `__TEXT`
+section (`-sectcreate`) into a chosen binary, so between two cases only the
+file's size differs — no extra code, symbols, relocations or resources, and
+nothing the test reads or executes.
+
+Each case runs `xcodebuild test-without-building` against an already-booted
+simulator with everything prebuilt, so the measurement covers the test session
+only and not compilation. `scripts/measure_rss.py` samples every 0.25 s via
+`ps`, tracking the process tree plus session helpers spawned outside it, and
+separately reports processes the run created that fall outside the tracked
+set, so simulator-side processes cannot go unnoticed. Reported figures are
+peak aggregate RSS.
+
+Caveats worth stating plainly:
+
+- Single machine and single OS build. Absolute megabytes will differ
+  elsewhere; the multipliers are the portable result.
+- Peak RSS is a coarse instrument. It is corroborated here by `footprint`,
+  `vmmap`, `heap` and system-wide `vm_stat`, which agree.
+- Xcode 16.2 and 16.3 were not measured, so the regression window is
+  16.2...16.4 rather than a single release.
+- Xcode's test navigator UI was not tested; see the caveat in section 9.
+- The disassembly is of shipped Apple code and is offered as evidence for the
+  report, not as a supported interface.
+
+## 13. Reproducing
 
 ```sh
-scripts/08_matrix.sh                                   # the cost model
+scripts/08_matrix.sh                     # the cost model
+scripts/10_experiment_dylib.sh           # which binaries are charged
+scripts/11_experiment_discovery.sh       # dylib-hosted test discovery
 STACK_LOGGING=1 PAD=256 PAD_TARGET=test scripts/09_memory_map.sh   # attribution
 DEVELOPER_DIR=/Applications/Xcode_16.1.app scripts/06_bisect_version.sh
 ```
