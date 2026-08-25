@@ -1,0 +1,22 @@
+# Captured on 26.2 (25C56), Apple M4 Max
+# Xcode 26.2 (17C52)
+# Produced by: scripts/10_experiment_dylib.sh -> dy_test256
+#
+** TEST EXECUTE SUCCEEDED **
+MEASURE peak_total_mb=2799
+MEASURE breakdown_at_peak:
+MEASURE       2786 MB  xcodebuild
+MEASURE         12 MB  DTServiceHub
+MEASURE per_process_peaks:
+MEASURE       2786 MB  xcodebuild
+MEASURE         12 MB  DTServiceHub
+MEASURE untracked_new_process_peaks:
+MEASURE        706 MB  beam.smp
+MEASURE         94 MB  rebar3
+MEASURE         84 MB  App
+MEASURE         35 MB  postgres:
+MEASURE         27 MB  cmux
+MEASURE         26 MB  mdworker_shared
+MEASURE         12 MB  com.apple.dt.Xcode.sourcecontrol.Git
+MEASURE          7 MB  com.apple.dt.instruments.dtsecurity
+MEASURE command_exit=0

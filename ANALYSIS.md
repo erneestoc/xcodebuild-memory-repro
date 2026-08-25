@@ -7,20 +7,23 @@ reproducible with the scripts in this repository.
 ## 0. Summary
 
 - Running simulator tests costs
-  `234 MB + 9.01 x (app binary MB) + 10.02 x (test bundle MB)` of host RAM per
-  test session, linear to at least 700 MB, additive across the two binaries,
-  and predicting held-out combinations to within 1 MB. A 400 MB app with a
-  700 MB test bundle costs **10.6 GB per session** before a single test runs.
+  `232 MB + 9.02 x (app binary MB) + 10.02 x (test bundle MB)` of host RAM per
+  test session. Measured across a full 5 x 5 grid: linear to 700 MB per binary,
+  additive, and predicting all sixteen held-out combinations to within 4 MB.
+  A 400 MB app with a 700 MB test bundle costs **10.6 GB per session** before a
+  single test runs; 700 MB in each costs **13.6 GB**.
 - The memory belongs to the `xcodebuild` process, not the app under test, and
   is **dirty, private and unreclaimable** (`MALLOC_LARGE`, 0 bytes clean,
   0 reclaimable). It cannot be evicted under pressure, only compressed or
   swapped — which is why the symptom is swap rather than harmless cache use.
-- The cause is not symbolication. `DVTFoundation` reads **entire Mach-O files
-  into malloc'd memory in order to inspect their headers**, via three separate
-  entry points that share one helper, and that helper passes `options: 0`
-  (a hardcoded `mov x3, #0x0`) instead of `NSDataReadingMappedIfSafe`.
-  Four full copies are live at once and roughly six more copies' worth of
-  freed pages are never returned to the OS.
+- The cause is not symbolication. The test harness validates the built products
+  against the run destination (`XCTHTestRunSpecification`
+  `_validateBuiltProductsForRunDestination:`), which asks which platforms and
+  architectures each Mach-O supports — a question answered by the file's header.
+  To answer it, **the entire file is read into malloc'd memory**, four separate
+  times per session, with `options: 0` rather than `NSDataReadingMappedIfSafe`.
+  Four full copies are live at once and roughly six more copies' worth of freed
+  pages are never returned to the OS.
 - The cost applies only to the binaries named in the `.xctestrun`. The same
   bytes in an embedded dynamic library cost **0.00x**, which both proves the
   cost is not inherent and provides a mitigation available today.
@@ -36,23 +39,42 @@ together (`scripts/08_matrix.sh`) gives a strikingly simple result:
 peak host RSS (MB) = 234 + 9.01 x (app binary MB) + 10.02 x (test bundle MB)
 ```
 
-| app pad | test pad | measured peak | predicted | error | held out of fit |
-|--------:|---------:|--------------:|----------:|------:|:---------------:|
-|   0 MB  |   0 MB   |    237 MB     |   234 MB  |  +3   |                 |
-| 128 MB  |   0 MB   |   1386 MB     |  1387 MB  |  -1   |                 |
-| 256 MB  |   0 MB   |   2542 MB     |  2541 MB  |  +1   |                 |
-| 512 MB  |   0 MB   |   4848 MB     |  4848 MB  |  -0   |                 |
-|   0 MB  | 128 MB   |   1514 MB     |  1516 MB  |  -2   |                 |
-|   0 MB  | 256 MB   |   2797 MB     |  2798 MB  |  -1   |                 |
-|   0 MB  | 512 MB   |   5363 MB     |  5363 MB  |  +0   |                 |
-|   0 MB  | 700 MB   |   7247 MB     |  7246 MB  |  +1   |                 |
-| 256 MB  | 256 MB   |   5106 MB     |  5106 MB  |  +0   | **yes**         |
-| 400 MB  | 700 MB   |  10852 MB     | 10851 MB  |  +1   | **yes**         |
+The full 5 x 5 grid, every cell measured
+([`evidence/matrix.csv`](evidence/matrix.csv)). Peak host RSS in MB, with the
+model's prediction and error underneath. Cells where **both** binaries are
+padded were held out of the fit entirely:
 
-The coefficients were fitted only on rows where a single binary was padded.
-The two mixed rows were held out and are still predicted to within 1 MB, so
-the two costs are genuinely independent and additive. The relationship stays
-linear all the way to 700 MB — it does not taper off at realistic sizes.
+| app \ test | 0 MB | 128 MB | 256 MB | 512 MB | 700 MB |
+|-----------:|-----:|-------:|-------:|-------:|-------:|
+| **0 MB**   | 233 | 1514 | 2798 | 5361 | 7247 |
+| **128 MB** | 1385 | *2672* | *3953* | *6517* | *8401* |
+| **256 MB** | 2542 | *3823* | *5106* | *7671* | *9555* |
+| **512 MB** | 4848 | *6132* | *7415* | *9979* | *11865* |
+| **700 MB** | 6544 | *7827* | *9110* | *11675* | *13562* |
+
+*Italic cells were never seen by the fit.*
+
+Fitted on the nine single-variable rows only:
+
+```
+peak_mb = 232 + 9.02 x app_mb + 10.02 x test_mb
+```
+
+Errors across all 25 cells, in MB:
+
+| app \ test | 0 | 128 | 256 | 512 | 700 |
+|-----------:|--:|----:|----:|----:|----:|
+| **0**   | +1 | -1 | +1 | -1 | +1 |
+| **128** | -1 | +3 | +2 | +0 | +1 |
+| **256** | +2 | +0 | +0 | +0 | +1 |
+| **512** | -1 | +1 | +1 | +0 | +2 |
+| **700** | +0 | +1 | +1 | +1 | +4 |
+
+Every one of the sixteen held-out combinations is predicted to within 4 MB —
+0.1% at the top of the range. The two costs are genuinely independent and
+additive, and the relationship stays linear all the way to 700 MB per binary:
+it does not taper off at realistic sizes. The worst case measured here,
+700 MB in each binary, is **13.6 GB for a single test session**.
 
 The padding is inert `__TEXT` data: no code, no symbols, no relocations,
 never executed and never read by the test. Only the *size* of the file
@@ -120,37 +142,67 @@ six retained copies is the observed ~10x.
 ## 5. Root cause: whole files read to parse their headers
 
 With `MallocStackLogging` enabled, `malloc_history` attributes every large
-block. With a 256 MB test bundle, the four live 257 MB allocations come from
-these call sites:
+block. With a 256 MB test bundle, four live 257 MB allocations account for
+1,026 MB, and every one of them is the test harness validating the built
+products against the run destination. Full stacks are in
+[`evidence/memmap-test256/malloc_history.large.txt`](evidence/memmap-test256/malloc_history.large.txt);
+innermost Foundation frames are identical in all four and elided here:
 
 ```
-DVTMachOPlatformsForExecutable
-  -> dataWithContentsOfFile
-     -> -[NSData initWithContentsOfFile:options:maxLength:error:]
-        -> NSData._readBytes(fromPath:maxLength:bytes:length:didMap:...)
-           -> _malloc_zone_malloc_instrumented_or_legacy       [257 MB]
+[1]  -[DVTDevice(IDETestHarnessConformance) supportsRunningExecutableAtURL:…]
+       -[DVTDevice(IDEFoundationAdditions) supportsRunningExecutableAtPath:…]
+         DVTPlatformFamilyForMachO
+           DVTMachOPlatformsForExecutable
+             dataWithContentsOfFile                                  257 MB
 
-DVTPlatformFamilyForMachO
-  -> dataWithContentsOfFile
-     -> ... same path ...                                      [257 MB]
+[2]  -[XCTHTestRunSpecification _isValidBundleAtFilePath:forRunDestination:…]
+       -[DVTDevice(IDETestHarnessConformance) supportsRunningExecutableAtURL:…]
+         -[DVTDevice(IDEFoundationAdditions) supportsRunningExecutableAtPath:…]
+           DVTPlatformFamilyForMachO
+             dataWithContentsOfFile                                  257 MB
 
--[DVTDevice(IDEFoundationAdditions)
-    supportsRunningExecutableAtPath:usingArchitecture:error:]
-  -> +[NSData dataWithContentsOfFile:options:error:]
-     -> ... same path ...                                      [257 MB]
+[3]  -[XCTHTestRunSpecification _validateBuiltProductsForRunDestination:…]
+       -[XCTHTestRunSpecification _isValidBundleAtFilePath:forRunDestination:…]
+         -[DVTDevice(IDETestHarnessConformance) supportsRunningExecutableAtURL:…]
+           -[DVTDevice(IDEFoundationAdditions) supportsRunningExecutableAtPath:…]
+             +[NSData dataWithContentsOfFile:options:error:]         257 MB
 
-DVTMachOPlatformsForExecutable  (second occurrence)             [257 MB]
+[4]  XCTHTestRunSpecification.populateiOSMacProperty()
+       DVTMachOPlatformForExecutable
+         DVTMachOPlatformsForExecutable
+           dataWithContentsOfFile                                    257 MB
+
+  all four then:
+    -[NSData initWithContentsOfFile:options:maxLength:error:]
+      NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:…)
+        readBytesFromFile(path:reportProgress:maxLength:options:…)
+          _malloc_zone_malloc_instrumented_or_legacy
 ```
 
-Every one of these functions is asking the same narrow question: *which
-platforms and architectures does this Mach-O support?* That answer lives in
-the Mach-O header and load commands — the first few kilobytes of the file.
+The purpose is narrow and identical throughout: establishing **which platforms
+and architectures a Mach-O supports**, so the harness can decide whether the
+bundle can run on the chosen destination, plus one query for an iOSMac
+property. That answer lives in the Mach-O header and load commands — the first
+few kilobytes of the file.
 
-To obtain it, `DVTFoundation` calls `NSData dataWithContentsOfFile:` without
+To obtain it, each path calls `NSData dataWithContentsOfFile:` without
 `NSDataReadingMappedIfSafe`, so Foundation allocates a private buffer the size
 of the entire file and reads all of it. The `didMap:` parameter visible in the
-Foundation frame is precisely the switch that would have made these pages
-mapped, clean, and evictable; it is not requested.
+Foundation frames is precisely the switch that would have made these pages
+mapped, clean and evictable; it is not requested.
+
+Two details matter for anyone fixing this:
+
+- **The reads are redundant with each other.** Stacks [1], [2] and [3] pass
+  through `supportsRunningExecutableAtPath:` for the same file within the same
+  validation, and [4] asks a related question about the same file. Nothing
+  caches the answer between them, so one logical question costs four full
+  reads.
+- **There is more than one call site.** Stacks [1], [2] and [4] route through
+  `DVTFoundation`'s shared `dataWithContentsOfFile` helper, but [3] calls
+  `+[NSData dataWithContentsOfFile:options:error:]` directly from
+  `supportsRunningExecutableAtPath:`. Changing only the shared helper would
+  therefore reduce the cost but not eliminate it.
 
 Note that this is **not** symbolication. Symbolication machinery is present in
 the process — `heap` shows 21,492 live `CSCppSymbolOwner` objects from
@@ -326,29 +378,38 @@ those alone captures most of the saving.
 
 In rough order of impact and ease:
 
-1. Read only the header and load commands, rather than the whole file.
-2. Failing that, pass `NSDataReadingMappedIfSafe` so the pages are clean and
-   evictable instead of dirty and swappable.
-3. Cache the per-path result so independent call sites do not each re-read.
-4. Release large transient buffers back to the OS rather than leaving dirty
-   pages in empty malloc regions.
+1. **Read only the header and load commands** rather than the whole file. The
+   platform and architecture data the callers want is at the start of the
+   file; this removes the term rather than shrinking it.
+2. **Cache the answer per path.** One validation currently performs four full
+   reads of the same file (section 5), so even without changing how the file
+   is read, memoising the result cuts the cost roughly fourfold.
+3. **Pass `NSDataReadingMappedIfSafe`** so the pages are file-backed, clean and
+   evictable instead of anonymous, dirty and swappable. This does not reduce
+   how much is read, but it removes the swap pressure, which is the part users
+   actually feel.
+4. **Return large transient buffers to the OS** rather than leaving dirty pages
+   in empty `MALLOC_LARGE` regions — roughly 3 of 5 GB at peak.
 
-Any one of these would materially reduce the peak; the first would
-effectively eliminate the term.
+Options 1 and 2 attack the waste; 3 and 4 mitigate its consequences. Any of
+them materially reduces the peak.
 
-Option 2 is a single instruction. In `DVTFoundation`'s shared
-`_dataWithContentsOfFile` helper, the options argument is a hardcoded zero:
+Option 3 is close to a single constant. In `DVTFoundation`'s shared
+`dataWithContentsOfFile` helper the options argument is a hardcoded zero
+(verified against the bytes on disk in
+[`evidence/disassembly.txt`](evidence/disassembly.txt)):
 
 ```
 mov  x3, #0x0                                              ; options = 0
 bl   "_objc_msgSend$initWithContentsOfFile:options:error:"
 ```
 
-`NSDataReadingMappedIfSafe` is `1 << 3`. Passing it would leave the logic
-unchanged while making the pages file-backed, clean and evictable instead of
-anonymous, dirty and swappable — which alone removes the swap pressure.
-Because all three public entry points funnel through this one helper, fixing
-it there fixes every call site at once. (This is an observation about the
+`NSDataReadingMappedIfSafe` is `1 << 3`. Note, however, that this helper is not
+the only path: stack [3] in section 5 calls
+`+[NSData dataWithContentsOfFile:options:error:]` directly from
+`supportsRunningExecutableAtPath:`, so the helper alone accounts for three of
+the four copies. A complete fix needs every call site, which is an argument for
+options 1 and 2 over 3. (This is an observation about the
 shipped code, offered to make the report actionable; patching a local Xcode
 is not a supported workaround, see below.)
 

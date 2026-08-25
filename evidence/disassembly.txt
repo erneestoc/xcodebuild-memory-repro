@@ -1,0 +1,39 @@
+# Xcode 26.2 Build version 17C52 
+# /Applications/Xcode.app/Contents/SharedFrameworks/DVTFoundation.framework/Versions/A/DVTFoundation
+# TeamIdentifier=59GAB85EFG
+#
+
+== exported Mach-O inspection symbols ==========================
+00000000006598f8 S _DVTFilePathKey_MachOArchitectures
+000000000012eec0 T _DVTMachOArchitecturesForExecutable
+000000000012cf08 T _DVTMachOPlatformsForExecutable
+000000000012c3e0 T _DVTPlatformFamilyForMachO
+00000000000b3c00 T __DVTFileDataTypeMachOArchitecturesDeriver
+
+== DVTPlatformFamilyForMachO: first action is a whole-file read ==
+_DVTPlatformFamilyForMachO:
+000000000012c414	bl	0x352874 ; symbol stub for: _objc_retain
+000000000012c41c	bl	0x352874 ; symbol stub for: _objc_retain
+000000000012c428	bl	_dataWithContentsOfFile
+000000000012c430	bl	0x352898 ; symbol stub for: _objc_retainAutoreleasedReturnValue
+000000000012c438	bl	0x352874 ; symbol stub for: _objc_retain
+
+== _dataWithContentsOfFile: the shared helper ===================
+-- the NSData call and the options argument it passes:
+000000000012d514	bl	0x3526c4 ; symbol stub for: _objc_alloc
+000000000012d518	mov	x2, x19
+000000000012d51c	mov	x3, #0x0
+000000000012d520	mov	x4, x21
+000000000012d524	bl	"_objc_msgSend$initWithContentsOfFile:options:error:"
+
+   The 'mov x3, #0x0' immediately preceding the call is the options
+   argument (x3 = 4th argument). NSDataReadingMappedIfSafe is 1 << 3.
+   With options 0, Foundation allocates a private buffer the size of
+   the entire file instead of mapping it.
+
+== raw bytes at the options instruction =========================
+   vmaddr        0x12d51c
+   arm64 slice   0x0
+   file offset   0x12d51c
+   instruction   0xd2800003   MOVZ X3, #0
+   for reference MOVZ X3, #8 (NSDataReadingMappedIfSafe) = 0xd2800103

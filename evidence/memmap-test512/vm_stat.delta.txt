@@ -1,0 +1,15 @@
+# Captured on 26.2 (25C56), Apple M4 Max
+# Xcode 26.2 (17C52)
+# Produced by: vm_stat before/at-peak, differenced
+#
+
+system-wide vm_stat delta, baseline -> peak (pad 512 MB):
+  anonymous (dirty, swappable)               +7578 MB
+  file-backed (clean, evictable)              +226 MB
+  wired                                       -715 MB
+  compressor                                    -0 MB
+
+If the growth were the kernel caching a mapped binary, it would
+appear as file-backed pages, which are clean and evictable under
+pressure. Anonymous growth is a private, dirty copy: it cannot be
+dropped, only compressed or swapped.

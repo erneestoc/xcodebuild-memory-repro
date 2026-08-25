@@ -1,0 +1,84 @@
+# Captured on 26.2 (25C56), Apple M4 Max
+# Xcode 26.2 (17C52)
+# Produced by: heap <pid>  (first 80 lines: totals, live block sizes, class breakdown)
+#
+Process:         xcodebuild [59537]
+Path:            /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild
+Load Address:    0x1021c0000
+Identifier:      xcodebuild
+Version:         16.0 (24504)
+Build Info:      IDEApplication-24553000000000000~2 (17C52)
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  bash [59250]
+Target Type:     live task
+
+Date/Time:       2026-08-25 01:47:33.042 -0700
+Launch Time:     2026-08-25 01:47:24.627 -0700
+OS Version:      macOS 26.2 (25C56)
+Report Version:  7
+Analysis Tool:   /usr/bin/heap
+
+Physical footprint:         5.1G
+Physical footprint (peak):  5.1G
+Idle exit:                  untracked
+----
+
+Process 59537: 2 zones
+
+All zones: 430307 nodes malloced - Sizes: 525392KB[4] 512KB[1] 272KB[1] 256KB[1] 224KB[1] 208KB[1] 128KB[3] 112KB[3] 80KB[1] 64KB[11] 48KB[9] 32KB[3] 28KB[8] 24KB[4] 20KB[10] 16KB[51] 14KB[4] 12KB[1] 10KB[18] 8KB[13] 7KB[4] 6KB[16] 5KB[35] 4KB[134] 3.5KB[7] 3KB[72] 2.5KB[90] 2KB[210] 1.75KB[26] 1.5KB[694] 1.25KB[3686] 1KB[2814] 896[3597] 768[5221] 640[2406] 512[1072] 448[770] 384[2056] 320[1789] 256[23314] 224[10224] 192[5427] 160[9872] 128[16055] 112[11219] 96[16995] 80[22418] 64[119186] 48[68010] 32[69043] 16[33697] 
+
+Found:  1144 ObjC classes  1207 Swift classes  141 C++ classes  120 CFTypes
+Type names for non-objects could be derived from allocation backtraces if the process used MallocStackLogging
+
+-----------------------------------------------------------------------
+All zones: 430307 nodes (2210082016 bytes)
+
+   COUNT      BYTES       AVG   CLASS_NAME                                        TYPE    BINARY
+   =====      =====       ===   ==========                                        ====    ======
+  200898   34396624     171.2   non-object                                                
+   62207    3693136      59.4   CFString                                          ObjC    CoreFoundation
+   21492    5501952     256.0   std::__shared_ptr_emplace<CSCppSymbolOwner>       C++     CoreSymbolicationDT
+    8629     414192      48.0   NSMutableArray                                    ObjC    CoreFoundation
+    7952     378544      47.6   NSMutableArray (Storage)                          C       CoreFoundation
+    7718     246976      32.0   NSDictionary                                      ObjC    CoreFoundation
+    7495    1120928     149.6   NSDictionary (Storage)                            C       CoreFoundation
+    7151     228832      32.0   NSMutableDictionary                               ObjC    CoreFoundation
+    6034    1335888     221.4   NSDictionary                                      ObjC    CoreFoundation
+    5285      84560      16.0   NSDictionary.cow (struct __cow_state_t)           C       CoreFoundation
+    4677     149664      32.0   NSArray                                           ObjC    CoreFoundation
+    4677     132704      28.4   NSArray._list (id[])                              C       CoreFoundation
+    4340    1190528     274.3   NSMutableDictionary (Storage)                     C       CoreFoundation
+    3945     315792      80.0   NSSet                                             ObjC    CoreFoundation
+    3938     126016      32.0   Class.data (class_rw_t)                           C       libobjc.A.dylib
+    3841     278064      72.4   CFString (Storage)                                C       CoreFoundation
+    3497      55952      16.0   NSMutableDictionary.cow (struct __cow_state_t)    C       CoreFoundation
+    3311     562320     169.8   NSPathStore2                                      ObjC    Foundation
+    3089     240432      77.8   CFArray                                           ObjC    CoreFoundation
+    2679     128592      48.0   TSPropertyListDictionary                          ObjC    DevToolsSupport
+    2083      66656      32.0   DVTExtensionParameter                             ObjC    DVTFoundation
+    1976      63232      32.0   NSDictionary                                      ObjC    CoreFoundation
+    1895     242560     128.0   NSMapTable                                        ObjC    Foundation
+    1885     332032     176.1   NSMapTable (Value Storage)                        C       Foundation
+    1846     339232     183.8   NSMapTable (Key Storage)                          C       Foundation
+    1819      60992      33.5   Class.data.methods.lists (method_list_t)          C       libobjc.A.dylib
+    1680     153472      91.4   NSURL                                             ObjC    CoreFoundation
+    1431      45792      32.0   DVTMacroNameRegistryRegistration                  ObjC    DVTMacroFoundation
+    1401     130192      92.9   Closure context (unknown layout)                  Swift   <unknown>
+    1372      71184      51.9   __NSMallocBlock__                                 ObjC    libsystem_blocks.dylib
+    1298     120032      92.5   Swift.StringStorage                               Swift   libswiftCore.dylib
+    1194     114624      96.0   NSLock                                            ObjC    Foundation
+    1092      87360      80.0   NSHashTable                                       ObjC    Foundation
+    1084      73728      68.0   NSHashTable (Weak Object Storage)                 C       Foundation
+    1011      32816      32.5   DVTMacroExpansionString_StringSubstitution        ObjC    DVTMacroFoundation
+     995      42016      42.2   NSArray                                           ObjC    CoreFoundation
+     904      72320      80.0   DVTExtension                                      ObjC    DVTFoundation
+     875      70000      80.0   DVTExtensionAttributeDescription                  ObjC    DVTFoundation
+     810      77760      96.0   DVTLanguageSpecification                          ObjC    DVTFoundation
+     789      12624      16.0   PathEntryBackedString                             ObjC    PackedPaths
+     769     166752     216.8   Class.methodCache._buckets (bucket_t)             C       libobjc.A.dylib
+     739      35472      48.0   DVTBuildVersion                                   ObjC    DVTFoundation
+     736      94208     128.0   dispatch_queue_t (serial)                         ObjC    libdispatch.dylib
+     683      70560     103.3   DVTFilePath                                       ObjC    DVTFoundation
+     616      39424      64.0   OS_os_log                                         ObjC    libsystem_trace.dylib
+     610     156160     256.0   XCBooleanPropertyDefinition                       ObjC    DevToolsCore

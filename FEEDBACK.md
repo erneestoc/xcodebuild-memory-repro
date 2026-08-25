@@ -1,6 +1,6 @@
 # Feedback Assistant report (paste-ready)
 
-**Title:** xcodebuild test-without-building: DVTFoundation reads entire Mach-O binaries into malloc'd memory to inspect their headers, costing ~9-10x binary size in dirty host RAM per test session
+**Title:** xcodebuild test-without-building: run-destination validation reads entire Mach-O binaries into malloc'd memory four times to inspect their headers, costing ~9-10x binary size in dirty host RAM per test session
 
 **Area:** Developer Tools — Xcode / xcodebuild
 
@@ -24,10 +24,11 @@ require in-memory buffering:
    `__TEXT` bytes (no code, no symbols, never executed or read) reproduces
    it exactly. Sweeping both binaries gives a linear, additive model:
 
-       peak RSS (MB) = 234 + 9.01 x (app binary MB) + 10.02 x (test bundle MB)
+       peak RSS (MB) = 232 + 9.02 x (app binary MB) + 10.02 x (test bundle MB)
 
-   fitted on single-variable rows and predicting held-out combinations to
-   within 1 MB, staying linear to 700 MB. For a 400 MB app with a 700 MB
+   fitted on the nine single-variable rows of a full 5 x 5 grid and predicting
+   all sixteen held-out combinations to within 4 MB, staying linear to 700 MB
+   per binary. For a 400 MB app with a 700 MB
    test bundle that is **10.6 GB of host memory per test session**, before
    any test runs.
 
@@ -45,28 +46,59 @@ require in-memory buffering:
    pressure, only compressed or swapped.
 
    **Attribution.** With `MallocStackLogging` enabled, `malloc_history`
-   attributes the large blocks to whole-file reads performed to inspect
-   Mach-O headers:
+   attributes the large blocks to test-harness validation of the built
+   products against the run destination. With a 256 MB test bundle, four
+   live 257 MB allocations (1,026 MB combined), innermost Foundation
+   frames identical and elided:
 
-       DVTMachOPlatformsForExecutable                     -> 257 MB
-       DVTPlatformFamilyForMachO                          -> 257 MB
-       -[DVTDevice supportsRunningExecutableAtPath:
-                          usingArchitecture:error:]       -> 257 MB
-       DVTMachOPlatformsForExecutable (second occurrence) -> 257 MB
+       [1] -[DVTDevice(IDETestHarnessConformance) supportsRunningExecutableAtURL:…]
+             -[DVTDevice(IDEFoundationAdditions) supportsRunningExecutableAtPath:…]
+               DVTPlatformFamilyForMachO
+                 DVTMachOPlatformsForExecutable
+                   dataWithContentsOfFile                          257 MB
 
-   each via `dataWithContentsOfFile` ->
-   `-[NSData initWithContentsOfFile:options:maxLength:error:]` ->
-   `NSData._readBytes(fromPath:maxLength:bytes:length:didMap:...)`.
+       [2] -[XCTHTestRunSpecification _isValidBundleAtFilePath:forRunDestination:…]
+             … supportsRunningExecutableAtPath: …
+               DVTPlatformFamilyForMachO
+                 dataWithContentsOfFile                            257 MB
 
-   These call sites need only the Mach-O header and load commands — the
-   first few kilobytes — but `NSData dataWithContentsOfFile:` is called
+       [3] -[XCTHTestRunSpecification _validateBuiltProductsForRunDestination:…]
+             -[XCTHTestRunSpecification _isValidBundleAtFilePath:forRunDestination:…]
+               … supportsRunningExecutableAtPath: …
+                 +[NSData dataWithContentsOfFile:options:error:]   257 MB
+
+       [4] XCTHTestRunSpecification.populateiOSMacProperty()
+             DVTMachOPlatformForExecutable
+               DVTMachOPlatformsForExecutable
+                 dataWithContentsOfFile                            257 MB
+
+       all four then:
+         -[NSData initWithContentsOfFile:options:maxLength:error:]
+           NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:…)
+             _malloc_zone_malloc_instrumented_or_legacy
+
+   Each of these needs only the Mach-O header and load commands — the
+   first few kilobytes — to establish which platforms and architectures
+   the binary supports. But `NSData dataWithContentsOfFile:` is called
    without `NSDataReadingMappedIfSafe`, so Foundation allocates a private
-   buffer the size of the entire file. `heap` confirms four such
-   full-size buffers alive simultaneously (`525392KB[4]` for a 512 MB
-   bundle), and `vmmap` shows a further 3.0 GB of dirty pages in *empty*
-   `MALLOC_LARGE` regions: freed allocations whose pages were never
-   returned to the OS. Four live copies plus roughly six retained copies
-   accounts for the observed ~10x.
+   buffer the size of the entire file.
+
+   Two things compound it. The reads are **redundant with each other**:
+   [1], [2] and [3] pass through `supportsRunningExecutableAtPath:` for the
+   same file within one validation and nothing caches the answer, so a
+   single logical question costs four full reads. And the buffers are
+   **retained after release**: `heap` confirms four full-size buffers alive
+   simultaneously (`525392KB[4]` for a 512 MB bundle) while `vmmap` shows a
+   further 3.0 GB of dirty pages in *empty* `MALLOC_LARGE` regions — freed
+   allocations whose pages were never returned to the OS. Four live copies
+   plus roughly six retained copies accounts for the observed ~10x.
+
+   Note that [1], [2] and [4] route through `DVTFoundation`'s shared
+   `dataWithContentsOfFile` helper, whose options argument is a hardcoded
+   zero (`mov x3, #0x0` immediately before
+   `initWithContentsOfFile:options:error:`), but [3] calls
+   `+[NSData dataWithContentsOfFile:options:error:]` directly. Changing only
+   the shared helper would reduce the cost without eliminating it.
 
    For completeness: symbolication is not the cause. `CoreSymbolicationDT`
    objects are present (21,492 live `CSCppSymbolOwner`) but total single-digit
@@ -192,22 +224,29 @@ processes. Each experiment isolates one variable:
 
 ## Expected results
 
-- Header inspection should read the Mach-O header and load commands, not the
-  whole file. Any of the following would materially reduce the peak:
-  1. read only the header/load commands;
-  2. pass `NSDataReadingMappedIfSafe` so the pages are clean and evictable
-     rather than dirty and swappable;
-  3. cache the per-path result so independent call sites do not each re-read
-     the same binary;
-  4. return large transient buffers to the OS rather than leaving dirty pages
-     in empty `MALLOC_LARGE` regions.
+- Run-destination validation should read the Mach-O header and load commands,
+  not the whole file. In rough order of impact:
+  1. **read only the header/load commands** — this removes the term rather
+     than shrinking it;
+  2. **cache the result per path** — one validation currently performs four
+     full reads of the same file, so memoising alone cuts it roughly
+     fourfold;
+  3. **pass `NSDataReadingMappedIfSafe`** so the pages are file-backed, clean
+     and evictable rather than anonymous, dirty and swappable. This does not
+     reduce how much is read but removes the swap pressure, which is what
+     users actually feel. Note this must be applied at every call site:
+     `DVTFoundation`'s shared `dataWithContentsOfFile` helper covers three of
+     the four copies, but `supportsRunningExecutableAtPath:` also calls
+     `+[NSData dataWithContentsOfFile:options:error:]` directly;
+  4. **return large transient buffers to the OS** rather than leaving dirty
+     pages in empty `MALLOC_LARGE` regions — roughly 3 of 5 GB at peak.
 - Console output streamed with O(1) buffering.
 - Attachment payloads that will be discarded (passing test,
   `.deleteOnSuccess`) not buffered in multiples on the host.
 
 ## Actual results
 
-Peak host-side RSS per session: `~234 MB + 9.01x(host app binary bytes) +
+Peak host-side RSS per session: `~232 MB + 9.02x(host app binary bytes) +
 10.02x(.xctest binary bytes) + ~14-26x(stdout bytes) +
 ~1.4-3x(attachment bytes)`, concentrated in the `xcodebuild` process itself
 and consisting almost entirely of dirty, unreclaimable `MALLOC_LARGE` pages.

@@ -1,30 +1,78 @@
 # xcodebuild test memory repro
 
-Self-contained scripts that reproduce and measure host-side (macOS) memory
-behavior of `xcodebuild test-without-building` that limits how many iOS
-simulator test sessions a CI machine can run in parallel.
+`xcodebuild test-without-building` allocates roughly **nine to ten times the
+size of the binaries under test** in host memory, per test session, before any
+test runs. The memory is private and dirty, so it cannot be evicted under
+pressure — only compressed or swapped.
 
-No Xcode project is needed: the scripts build a minimal host app and an
-app-hosted XCTest bundle directly with `swiftc`, generate an `.xctestrun`,
-run it with `xcodebuild test-without-building`, and sample the resident
-memory of the session's processes until it exits.
+```
+peak host RSS (MB) = 232 + 9.02 x (app binary MB) + 10.02 x (test bundle MB)
+```
+
+Measured across a full 5 x 5 grid of binary sizes; every combination the fit
+never saw is predicted to within 4 MB. A 400 MB app with a 700 MB test bundle
+costs 10.6 GB per session, and 700 MB in each costs 13.6 GB.
+
+**Cause.** Before running, the harness validates the built products against the
+run destination — `-[XCTHTestRunSpecification
+_validateBuiltProductsForRunDestination:]` down through
+`-[DVTDevice supportsRunningExecutableAtPath:usingArchitecture:error:]` and
+`DVTMachOPlatformsForExecutable`. It needs to know which platforms and
+architectures each Mach-O supports, which is recorded in the file's header and
+load commands. To read those few kilobytes it calls
+`NSData dataWithContentsOfFile:` with a hardcoded `options: 0` instead of
+`NSDataReadingMappedIfSafe`, so Foundation allocates a private copy of the
+entire file. This happens four times per session for the same file, nothing
+caches the answer between them, and roughly six more copies' worth of freed
+pages are never returned to the OS.
+
+Everything above is measured, and the raw captures are committed under
+[`evidence/`](evidence/) so none of it has to be taken on trust:
+
+| Question | Answer | Where to look |
+|---|---|---|
+| How much memory, exactly? | linear and additive in both binaries, predicting held-out cells to ~1 MB | [`evidence/matrix.csv`](evidence/matrix.csv) |
+| Whose memory is it? | `xcodebuild`'s own, 220 MB → 2528 MB; the app under test does not grow | [`evidence/memmap-*/footprint.txt`](evidence/) |
+| Why does it cause swap? | anonymous and dirty (~7.6 GB) not file-backed (~226 MB) | [`evidence/memmap-*/vm_stat.delta.txt`](evidence/) |
+| What are the allocations? | four simultaneous full-size buffers, plus ~3 GB freed-but-resident | [`evidence/memmap-*/heap.excerpt.txt`](evidence/) |
+| What allocates them? | whole-file reads for Mach-O header inspection | [`evidence/memmap-*/malloc_history.large.txt`](evidence/) |
+| Is that really what the code does? | `mov x3, #0x0` — options argument, verified against the bytes on disk | [`evidence/disassembly.txt`](evidence/disassembly.txt) |
+| Is the cost avoidable? | the same bytes in an embedded dylib cost 0.00x | [`evidence/placement/`](evidence/) |
+| Has it got worse? | 7.01x in Xcode 16.1 → 9x/10x from 16.4 | [`evidence/bisect.csv`](evidence/bisect.csv) |
+
+**[`ANALYSIS.md`](ANALYSIS.md) is the full write-up.**
+[`FEEDBACK.md`](FEEDBACK.md) is the Apple Feedback Assistant report.
 
 ## Requirements
 
 - macOS with Xcode (tested with Xcode 26.x on macOS 26, Apple silicon)
 - an iOS simulator runtime installed (any recent iPhone device type)
 
+No Xcode project is needed: the scripts build a minimal host app and an
+app-hosted XCTest bundle directly with `swiftc`, generate an `.xctestrun`,
+run it with `xcodebuild test-without-building`, and sample the resident
+memory of the session's processes until it exits. Binary size is varied by
+linking an inert `__TEXT` section, so between two cases only the *size* of a
+file differs — no extra code, symbols, relocations or resources, and nothing
+the test reads or executes.
+
 ## Run
 
 ```sh
-./scripts/run_all.sh
+./scripts/run_all.sh          # everything, then refreshes evidence/
+QUICK=1 ./scripts/run_all.sh  # skips the 25-cell matrix and the memory capture
 ```
 
-Takes ~10 minutes. Results (peak memory per case, per-process breakdown,
-and RSS timelines) land in `results/`; a consolidated table is printed at
-the end. Individual experiments can be run separately
-(`scripts/03..05_experiment_*.sh`), and single cases via
-`scripts/02_run_case.sh` (see its header for knobs).
+The full run builds and measures 25 fixtures, some 700 MB, so allow time and
+~15 GB of free disk. Results land in `results/`; the load-bearing captures are
+copied into `evidence/`. Individual experiments run standalone, and single
+cases via `scripts/02_run_case.sh` (see its header for knobs).
+
+Comparing toolchains is separate, one Xcode at a time:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode_16.1.app scripts/06_bisect_version.sh
+```
 
 ## What it demonstrates
 

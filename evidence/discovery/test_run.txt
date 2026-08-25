@@ -1,0 +1,24 @@
+# Captured on 26.2 (25C56), Apple M4 Max
+# Xcode 26.2 (17C52)
+# Produced by: scripts/11_experiment_discovery.sh (whole bundle, no -only-testing)
+#
+Test Suite 'All tests' started at 2026-08-25 02:06:00.556.
+Test Suite 'MemTests.xctest' started at 2026-08-25 02:06:00.556.
+Test Suite 'MemTests' started at 2026-08-25 02:06:00.556.
+Test Case '-[MemTests.MemTests testAddAttachment]' started.
+Test Case '-[MemTests.MemTests testAddAttachment]' passed (0.001 seconds).
+Test Case '-[MemTests.MemTests testEmitConsoleOutput]' started.
+Test Case '-[MemTests.MemTests testEmitConsoleOutput]' passed (0.000 seconds).
+Test Case '-[MemTests.MemTests testHoldOpen]' started.
+Test Case '-[MemTests.MemTests testHoldOpen]' passed (0.000 seconds).
+Test Case '-[MemTests.MemTests testTrivial]' started.
+Test Case '-[MemTests.MemTests testTrivial]' passed (0.000 seconds).
+Test Suite 'MemTests' passed at 2026-08-25 02:06:00.559.
+Test Suite 'MemTests.xctest' passed at 2026-08-25 02:06:00.559.
+Test Suite 'Frameworks' started at 2026-08-25 02:06:00.559.
+Test Suite 'DylibHostedTests' started at 2026-08-25 02:06:00.559.
+Test Case '-[DylibTests.DylibHostedTests testFromDylib]' started.
+Test Case '-[DylibTests.DylibHostedTests testFromDylib]' passed (0.000 seconds).
+Test Suite 'DylibHostedTests' passed at 2026-08-25 02:06:00.560.
+Test Suite 'Frameworks' passed at 2026-08-25 02:06:00.560.
+Test Suite 'All tests' passed at 2026-08-25 02:06:00.560.

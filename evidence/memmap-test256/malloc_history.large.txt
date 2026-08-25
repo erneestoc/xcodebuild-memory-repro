@@ -1,0 +1,54 @@
+# Captured on 26.2 (25C56), Apple M4 Max
+# Xcode 26.2 (17C52)
+# Produced by: malloc_history <pid> -allBySize  (allocations > 50 MB, innermost 10 frames)
+#
+4 live allocation stacks over 50 MB, 1026 MB combined
+
+=== 257 MB in 1 call(s) (269041664 bytes) ===
+    (com.apple.dt.IDEFoundation) -[DVTDevice(IDETestHarnessConformance) supportsRunningExecutableAtURL:usingArchitecture:error:]
+    (com.apple.dt.IDEFoundation) -[DVTDevice(IDEFoundationAdditions) supportsRunningExecutableAtPath:usingArchitecture:error:]
+    (com.apple.dt.DVTFoundation) DVTPlatformFamilyForMachO
+    (com.apple.dt.DVTFoundation) DVTMachOPlatformsForExecutable
+    (com.apple.dt.DVTFoundation) dataWithContentsOfFile
+    (com.apple.Foundation) -[NSData(NSData) initWithContentsOfFile:options:maxLength:error:]
+    (com.apple.Foundation) @objc static NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:reportProgress:)
+    (com.apple.Foundation) specialized static NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:reportProgress:)
+    (com.apple.Foundation) readBytesFromFile(path:reportProgress:maxLength:options:attributesToRead:attributes:)
+    (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+
+=== 257 MB in 1 call(s) (269041664 bytes) ===
+    (com.apple.dt.XCTHarness) -[XCTHTestRunSpecification _isValidBundleAtFilePath:forRunDestination:error:]
+    (com.apple.dt.IDEFoundation) -[DVTDevice(IDETestHarnessConformance) supportsRunningExecutableAtURL:usingArchitecture:error:]
+    (com.apple.dt.IDEFoundation) -[DVTDevice(IDEFoundationAdditions) supportsRunningExecutableAtPath:usingArchitecture:error:]
+    (com.apple.dt.DVTFoundation) DVTPlatformFamilyForMachO
+    (com.apple.dt.DVTFoundation) dataWithContentsOfFile
+    (com.apple.Foundation) -[NSData(NSData) initWithContentsOfFile:options:maxLength:error:]
+    (com.apple.Foundation) @objc static NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:reportProgress:)
+    (com.apple.Foundation) specialized static NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:reportProgress:)
+    (com.apple.Foundation) readBytesFromFile(path:reportProgress:maxLength:options:attributesToRead:attributes:)
+    (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+
+=== 257 MB in 1 call(s) (269041664 bytes) ===
+    (com.apple.dt.XCTHarness) -[XCTHTestRunSpecification _validateBuiltProductsForRunDestination:error:]
+    (com.apple.dt.XCTHarness) -[XCTHTestRunSpecification _isValidBundleAtFilePath:forRunDestination:error:]
+    (com.apple.dt.IDEFoundation) -[DVTDevice(IDETestHarnessConformance) supportsRunningExecutableAtURL:usingArchitecture:error:]
+    (com.apple.dt.IDEFoundation) -[DVTDevice(IDEFoundationAdditions) supportsRunningExecutableAtPath:usingArchitecture:error:]
+    (com.apple.Foundation) +[NSData(NSData) dataWithContentsOfFile:options:error:]
+    (com.apple.Foundation) -[NSData(NSData) initWithContentsOfFile:options:maxLength:error:]
+    (com.apple.Foundation) @objc static NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:reportProgress:)
+    (com.apple.Foundation) specialized static NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:reportProgress:)
+    (com.apple.Foundation) readBytesFromFile(path:reportProgress:maxLength:options:attributesToRead:attributes:)
+    (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+
+=== 257 MB in 1 call(s) (269041664 bytes) ===
+    (com.apple.dt.IDEFoundation) @objc XCTHTestRunSpecification.populateiOSMacProperty()
+    (com.apple.dt.IDEFoundation) XCTHTestRunSpecification.populateiOSMacProperty()
+    (com.apple.dt.DVTFoundation) DVTMachOPlatformForExecutable
+    (com.apple.dt.DVTFoundation) DVTMachOPlatformsForExecutable
+    (com.apple.dt.DVTFoundation) dataWithContentsOfFile
+    (com.apple.Foundation) -[NSData(NSData) initWithContentsOfFile:options:maxLength:error:]
+    (com.apple.Foundation) @objc static NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:reportProgress:)
+    (com.apple.Foundation) specialized static NSData._readBytes(fromPath:maxLength:bytes:length:didMap:options:reportProgress:)
+    (com.apple.Foundation) readBytesFromFile(path:reportProgress:maxLength:options:attributesToRead:attributes:)
+    (libsystem_malloc.dylib) _malloc_zone_malloc_instrumented_or_legacy
+

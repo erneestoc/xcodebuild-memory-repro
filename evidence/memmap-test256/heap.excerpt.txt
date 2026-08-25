@@ -1,0 +1,84 @@
+# Captured on 26.2 (25C56), Apple M4 Max
+# Xcode 26.2 (17C52)
+# Produced by: heap <pid>  (first 80 lines: totals, live block sizes, class breakdown)
+#
+heap(62569) MallocStackLogging: process is not in a debuggable environment; unsetting MallocStackLoggingDirectory environment variable
+heap(62569) MallocStackLogging: could not tag MSL-related memory as no_footprint, so those pages will be included in process footprint - No such file or directory (2)
+heap(62569) MallocStackLogging: recording malloc (and VM allocation) stacks using lite mode
+Process:         xcodebuild [62396]
+Path:            /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild
+Load Address:    0x1025a8000
+Identifier:      xcodebuild
+Version:         16.0 (24504)
+Build Info:      IDEApplication-24553000000000000~2 (17C52)
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  bash [62306]
+Target Type:     live task
+
+Date/Time:       2026-08-25 01:49:59.889 -0700
+Launch Time:     2026-08-25 01:49:53.477 -0700
+OS Version:      macOS 26.2 (25C56)
+Report Version:  7
+Analysis Tool:   /usr/bin/heap
+
+Physical footprint:         2.6G
+Physical footprint (peak):  2.6G
+Idle exit:                  untracked
+----
+
+Process 62396: 4 zones
+
+All zones: 430129 nodes malloced - Sizes: 262736KB[4] 528KB[1] 272KB[2] 224KB[1] 208KB[1] 144KB[1] 128KB[2] 112KB[3] 80KB[8] 64KB[5] 48KB[11] 28KB[8] 24KB[6] 20KB[59] 14KB[4] 12KB[5] 10KB[25] 8KB[60] 7KB[5] 6KB[25] 5KB[83] 4KB[12] 3.5KB[24] 3KB[130] 2.5KB[195] 2KB[37] 1.75KB[31] 1.5KB[740] 1.25KB[3693] 1KB[2758] 896[4356] 768[4506] 640[2533] 512[907] 448[1312] 384[1723] 320[2088] 256[30843] 224[6675] 192[9389] 160[15724] 128[10223] 112[15311] 96[22868] 80[121299] 64[63149] 48[61814] 32[36125] 16[11345] 
+
+Found:  1144 ObjC classes  1207 Swift classes  141 C++ classes  120 CFTypes
+Derived 423 type names for non-objects from allocation backtraces
+
+-----------------------------------------------------------------------
+All zones: 430129 nodes (1141247856 bytes)
+
+   COUNT      BYTES       AVG   CLASS_NAME                                        TYPE    BINARY
+   =====      =====       ===   ==========                                        ====    ======
+   94674    7573920      80.0   malloc in CSCppSymbolOwnerTimeline::_insertAddressRangeForSymbolOwner(TRange<Pointer64>, std::shared_ptr<CSCppSymbolOwner>)  C++     CoreSymbolicationDT
+   61878    4679584      75.6   CFString                                          ObjC    CoreFoundation
+   42984   21918048     509.9   malloc in TExtendedMachOHeader<SizeAndEndianness<Pointer64, LittleEndian>>::extract_segments_and_sections(std::vector<CSCppSegmentRange>*, std::vector<CSCppSectionRange>*) const  C++     CoreSymbolicationDT
+   21492    5501952     256.0   std::__shared_ptr_emplace<CSCppSymbolOwner>       C++     CoreSymbolicationDT
+   21492    2159424     100.5   malloc in CSCppSymbolOwner::CSCppSymbolOwner(UUID const*, unsigned int, unsigned long long, unsigned long long, unsigned int, CSCppArchitecture, char const*)  C++     CoreSymbolicationDT
+   21492     702048      32.7   malloc in utility_basename(char const*)           C       CoreSymbolicationDT
+    8629     552256      64.0   NSMutableArray                                    ObjC    CoreFoundation
+    7951     544240      68.4   NSMutableArray (Storage)                          C       CoreFoundation
+    7718     370464      48.0   NSDictionary                                      ObjC    CoreFoundation
+    7150     343200      48.0   NSMutableDictionary                               ObjC    CoreFoundation
+    6691     107056      16.0   NSDictionary.cow (struct __cow_state_t)           C       CoreFoundation
+    6088    1061376     174.3   NSDictionary (Storage)                            C       CoreFoundation
+    6034    1539728     255.2   NSDictionary                                      ObjC    CoreFoundation
+    5746    1402848     244.1   NSMutableDictionary (Storage)                     C       CoreFoundation
+    4677     224496      48.0   NSArray                                           ObjC    CoreFoundation
+    4677     210272      45.0   NSArray._list (id[])                              C       CoreFoundation
+    3945     379008      96.1   NSSet                                             ObjC    CoreFoundation
+    3938     185024      47.0   Class.data (class_rw_t)                           C       libobjc.A.dylib
+    3821     329904      86.3   CFString (Storage)                                C       CoreFoundation
+    3311     613744     185.4   NSPathStore2                                      ObjC    Foundation
+    3089     289824      93.8   CFArray                                           ObjC    CoreFoundation
+    2679     171456      64.0   TSPropertyListDictionary                          ObjC    DevToolsSupport
+    2550      81600      32.0   malloc in lh_insert                               C       libcrypto.35.dylib
+    2133     122608      57.5   memalign in (anonymous namespace)::CommandLineParser::addOption(llvm::cl::Option*, llvm::cl::SubCommand*)  C++     LLDB
+    2091      33456      16.0   NSMutableDictionary.cow (struct __cow_state_t)    C       CoreFoundation
+    2083      99984      48.0   DVTExtensionParameter                             ObjC    DVTFoundation
+    1976      94848      48.0   NSDictionary                                      ObjC    CoreFoundation
+    1895     303200     160.0   NSMapTable                                        ObjC    Foundation
+    1885     423296     224.6   NSMapTable (Value Storage)                        C       Foundation
+    1846     432304     234.2   NSMapTable (Key Storage)                          C       Foundation
+    1819      90048      49.5   Class.data.methods.lists (method_list_t)          C       libobjc.A.dylib
+    1782     101776      57.1   memalign in llvm::cl::Option::addArgument()       C++     libclang.dylib
+    1778     158432      89.1   malloc in _addToStatCache                         C       Foundation
+    1680     180352     107.4   NSURL                                             ObjC    CoreFoundation
+    1511     103808      68.7   malloc in MTLPipelineDataCache::parseDataFileHeader()  C++     Metal
+    1431      68688      48.0   DVTMacroNameRegistryRegistration                  ObjC    DVTMacroFoundation
+    1401     150896     107.7   Closure context (unknown layout)                  Swift   <unknown>
+    1377      75808      55.1   __NSMallocBlock__                                 ObjC    libsystem_blocks.dylib
+    1304     141808     108.7   Swift.StringStorage                               Swift   libswiftCore.dylib
+    1194     133728     112.0   NSLock                                            ObjC    Foundation
+    1092     104832      96.0   NSHashTable                                       ObjC    Foundation
+    1084     100752      92.9   NSHashTable (Weak Object Storage)                 C       Foundation
+    1011      48992      48.5   DVTMacroExpansionString_StringSubstitution        ObjC    DVTMacroFoundation

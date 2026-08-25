@@ -1,0 +1,47 @@
+# Captured on 26.2 (25C56), Apple M4 Max
+# Xcode 26.2 (17C52)
+# Produced by: footprint <pid>
+#
+======================================================================
+xcodebuild [62396]: 64-bit    Footprint: 2694 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+2568 MB        0 B          0 B         31    MALLOC_LARGE
+  72 MB        0 B          0 B         29    MALLOC_SMALL
+  18 MB      80 KB          0 B       1048    __DATA_CONST
+  16 MB        0 B          0 B         18    performance tool data
+  13 MB        0 B          0 B       1040    __DATA
+2019 KB        0 B          0 B          1    page table
+1376 KB        0 B          0 B         13    MALLOC metadata
+1050 KB        0 B          0 B        762    __DATA_DIRTY
+ 608 KB        0 B          0 B        903    __AUTH_CONST
+ 576 KB        0 B        96 KB         34    stack
+ 400 KB        0 B          0 B          5    dyld private memory
+ 320 KB      10 MB          0 B         22    mapped file
+ 263 KB        0 B          0 B       2235    unused dyld shared cache area
+ 224 KB        0 B          0 B         13    untagged (VM_ALLOCATE)
+ 215 KB        0 B          0 B        541    __AUTH
+ 112 KB        0 B          0 B          2    __TPRO_CONST
+  64 KB        0 B          0 B          2    IOAccelerator
+  48 KB        0 B          0 B          1    MALLOC_TINY
+  48 KB        0 B          0 B          3    IOKit
+  32 KB        0 B          0 B          1    Activity Tracing
+  16 KB        0 B          0 B          1    Foundation
+  16 KB        0 B          0 B          2    IOAccelerator (graphics)
+  16 KB        0 B          0 B          1    os_alloc_once
+  16 KB        0 B          0 B          1    MALLOC_NANO
+    0 B        0 B        64 KB          2    SQLite page cache
+    0 B      64 MB          0 B       1076    __TEXT
+    0 B      15 MB          0 B        151    __LINKEDIT
+    0 B        0 B          0 B          1    __CTF
+    0 B        0 B          0 B          1    __FONT_DATA
+    0 B        0 B          0 B          2    __INFO_FILTER
+    ---        ---          ---        ---    ---
+2694 MB      89 MB       160 KB       7944    TOTAL
+
+Auxiliary data:
+    phys_footprint: 2694 MB
+    phys_footprint_peak: 2694 MB
+
