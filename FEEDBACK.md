@@ -26,11 +26,32 @@ require in-memory buffering:
 
        peak RSS (MB) = 232 + 9.02 x (app binary MB) + 10.02 x (test bundle MB)
 
-   fitted on the nine single-variable rows of a full 5 x 5 grid and predicting
-   all sixteen held-out combinations to within 4 MB, staying linear to 700 MB
-   per binary. For a 400 MB app with a 700 MB
-   test bundle that is **10.6 GB of host memory per test session**, before
-   any test runs.
+   Peak host RSS in MB across the full grid. Only the first row and column,
+   where a single binary is padded, were used to fit; the sixteen cells in
+   parentheses were held out entirely:
+
+       app \ test |    0     128     256     512     700 MB
+       -----------+---------------------------------------------
+             0 MB |  233    1514    2798    5361    7247
+           128 MB | 1385  (2672)  (3953)  (6517)  (8401)
+           256 MB | 2542  (3823)  (5106)  (7671)  (9555)
+           512 MB | 4848  (6132)  (7415)  (9979) (11865)
+           700 MB | 6544  (7827)  (9110) (11675) (13562)
+
+   Prediction error, in MB:
+
+       app \ test |  0    128    256    512    700
+       -----------+---------------------------------
+             0    | +1     -1     +1     -1     +1
+           128    | -1    (+3)   (+2)   (+0)   (+1)
+           256    | +2    (+0)   (+0)   (+0)   (+1)
+           512    | -1    (+1)   (+1)   (+0)   (+2)
+           700    | +0    (+1)   (+1)   (+1)   (+4)
+
+   Every held-out combination is predicted to within 4 MB, 0.1% at the top of
+   the range, and the relationship stays linear to 700 MB per binary. For a
+   400 MB app with a 700 MB test bundle that is **10.6 GB of host memory per
+   test session** before any test runs; 700 MB in each is **13.6 GB**.
 
    The cost is attached to the binary *files*, not to anything executing:
    the simulated app's own RSS does not change when its binary grows, and
@@ -201,7 +222,7 @@ processes. Each experiment isolates one variable:
 
 - `scripts/03_experiment_binary_size.sh` — pads the host app binary with
   0 / 64 / 256 MB of inert `__TEXT` data and shows peak RSS growing ~9x
-  the added size (measured: 235 MB baseline → 2531 MB at +256 MB).
+  the added size (measured: 233 MB baseline → 2542 MB at +256 MB).
 - `scripts/04_experiment_console_output.sh` — the test writes N MB to
   stdout; peak grows ~14-26x N.
 - `scripts/05_experiment_attachments.sh` — the test adds one N MB

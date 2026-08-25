@@ -32,17 +32,10 @@ reproducible with the scripts in this repository.
 
 ## 1. The cost model
 
-Sweeping the host app binary and the `.xctest` bundle binary independently and
-together (`scripts/08_matrix.sh`) gives a strikingly simple result:
-
-```
-peak host RSS (MB) = 234 + 9.01 x (app binary MB) + 10.02 x (test bundle MB)
-```
-
-The full 5 x 5 grid, every cell measured
-([`evidence/matrix.csv`](evidence/matrix.csv)). Peak host RSS in MB, with the
-model's prediction and error underneath. Cells where **both** binaries are
-padded were held out of the fit entirely:
+`scripts/08_matrix.sh` sweeps the host app binary and the `.xctest` bundle
+binary across a full 5 x 5 grid, every cell measured
+([`evidence/matrix.csv`](evidence/matrix.csv)). Peak host RSS in MB. Cells
+where **both** binaries are padded were held out of the fit entirely:
 
 | app \ test | 0 MB | 128 MB | 256 MB | 512 MB | 700 MB |
 |-----------:|-----:|-------:|-------:|-------:|-------:|
@@ -273,13 +266,17 @@ for the test bundle — rather than of any single read becoming more expensive.
 
 Using the fitted model, for one test session:
 
-| App binary | Test bundle | Peak host RSS |
-|-----------:|------------:|--------------:|
-|     50 MB  |      50 MB  |      1.2 GB   |
-|    200 MB  |     300 MB  |      5.0 GB   |
-|    400 MB  |     500 MB  |      8.8 GB   |
-|    400 MB  |     700 MB  |     10.6 GB   |
-|    500 MB  |     700 MB  |     11.5 GB   |
+| App binary | Test bundle | Peak host RSS | Sessions in 48 GB |
+|-----------:|------------:|--------------:|------------------:|
+|     50 MB  |      50 MB  |      1.2 GB   | ~38 |
+|    200 MB  |     300 MB  |      5.0 GB   | ~9  |
+|    400 MB  |     500 MB  |      8.8 GB   | ~5  |
+|    400 MB  |     700 MB  |     10.6 GB   | ~4  |
+|    500 MB  |     700 MB  |     11.5 GB   | ~4  |
+|    700 MB  |     700 MB  |     13.6 GB   | ~3  |
+
+The 700/700 row is measured directly (13,562 MB); the rest follow from the
+model, which reproduces every measured cell to within 4 MB.
 
 Consequences that follow directly:
 

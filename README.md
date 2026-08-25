@@ -76,55 +76,63 @@ DEVELOPER_DIR=/Applications/Xcode_16.1.app scripts/06_bisect_version.sh
 
 ## What it demonstrates
 
-Measured on an M4 Max, Xcode 26.2, warm booted simulator. Peak aggregate
-RSS of `xcodebuild` + session helpers, from `results/summary.txt`:
+Measured on an M4 Max, 48 GB, macOS 26.2 (25C56), Xcode 26.2 (17C52), against a
+warm booted simulator. Peak aggregate RSS of `xcodebuild` plus session helpers.
+
+### The size of the binaries (the dominant effect)
+
+The full 5 x 5 grid, peak host RSS in MB. Only the first row and column — where
+a single binary is padded — were used to fit the model; the sixteen cells where
+**both** are padded were held out entirely.
+
+| app \ test | 0 MB | 128 MB | 256 MB | 512 MB | 700 MB |
+|-----------:|-----:|-------:|-------:|-------:|-------:|
+| **0 MB**   | 233 | 1514 | 2798 | 5361 | 7247 |
+| **128 MB** | 1385 | *2672* | *3953* | *6517* | *8401* |
+| **256 MB** | 2542 | *3823* | *5106* | *7671* | *9555* |
+| **512 MB** | 4848 | *6132* | *7415* | *9979* | *11865* |
+| **700 MB** | 6544 | *7827* | *9110* | *11675* | *13562* |
+
+Prediction error across all twenty-five cells, in MB:
+
+| app \ test | 0 | 128 | 256 | 512 | 700 |
+|-----------:|--:|----:|----:|----:|----:|
+| **0**   | +1 | -1 | +1 | -1 | +1 |
+| **128** | -1 | *+3* | *+2* | *+0* | *+1* |
+| **256** | +2 | *+0* | *+0* | *+0* | *+1* |
+| **512** | -1 | *+1* | *+1* | *+0* | *+2* |
+| **700** | +0 | *+1* | *+1* | *+1* | *+4* |
+
+Every held-out combination lands within 4 MB, 0.1% at the top of the range, so
+the two costs are independent and additive. The relationship stays linear to
+700 MB per binary — it does not taper off at realistic sizes.
+
+### Which binaries are charged
+
+Only the Mach-Os named in the `.xctestrun`. The same 256 MB of padding placed
+in an embedded dynamic library that the app links, and that dyld therefore
+loads, costs nothing:
+
+| Padded binary | Named in xctestrun | Peak | Multiplier |
+|---------------|--------------------|-----:|-----------:|
+| baseline | — | 232 MB | — |
+| `App.app/App` | TestHostPath | 2543 MB | 9.03x |
+| `App.app/PlugIns/*.xctest/MemTests` | TestBundlePath | 2799 MB | 10.03x |
+| `App.app/Frameworks/libPadLib.dylib` | no | 231 MB | **0.00x** |
+
+The same bytes cost 10x in one Mach-O and nothing in another, so the cost is
+not inherent to having large binaries under test. Moving code into embedded
+dynamic frameworks avoids it entirely, and an `XCTestCase` subclass hosted in
+such a library is still discovered and run
+(`scripts/11_experiment_discovery.sh`; see the caveat about Xcode's test
+navigator in [`ANALYSIS.md`](ANALYSIS.md)).
+
+### Two smaller effects
 
 | Case | Peak RSS | Effect |
 |---|---|---|
-| baseline (100 KB host app binary, trivial test) | ~235 MB | fixed session cost |
-| host app binary +256 MB of inert `__TEXT` padding | ~2531 MB | **~9.0x the added binary size** |
 | test writes 4 MB to stdout | ~292 MB | ~14x the bytes written |
-| test adds one 64 MB `XCTAttachment`, `lifetime = .deleteOnSuccess`, test passes | ~421 MB | ~2.9x the payload that could never be needed |
-
-The dominant effect is the first one, and it applies to every Mach-O in the
-session. Sweeping both binaries (`scripts/08_matrix.sh`) gives a linear,
-additive model that predicts held-out combinations to within 1 MB:
-
-```
-peak host RSS (MB) = 234 + 9.01 x (app binary MB) + 10.02 x (test bundle MB)
-```
-
-So a 400 MB app with a 700 MB test bundle costs **10.6 GB of host memory per
-test session**, before any test runs, independent of what the tests do — which,
-more than CPU, is what caps `-parallel-testing` / Bazel `--local_test_jobs`
-style simulator parallelism.
-
-`malloc_history` attributes the large allocations to whole-file reads
-performed to inspect Mach-O headers — `DVTMachOPlatformsForExecutable`,
-`DVTPlatformFamilyForMachO` and
-`-[DVTDevice supportsRunningExecutableAtPath:usingArchitecture:error:]`, each
-calling `NSData dataWithContentsOfFile:` without `NSDataReadingMappedIfSafe`
-and so allocating a private copy of the entire file to read its first few
-kilobytes. The pages are dirty and unreclaimable rather than mapped and
-evictable, which is why the symptom is swap.
-
-Only the binaries named in the `.xctestrun` are charged. The same 256 MB of
-padding placed in an embedded dynamic library costs **nothing**:
-
-| Padded binary | Peak | Multiplier |
-|---------------|-----:|-----------:|
-| baseline | 232 MB | — |
-| `App.app/App` | 2543 MB | 9.03x |
-| `App.app/PlugIns/*.xctest/MemTests` | 2799 MB | 10.03x |
-| `App.app/Frameworks/libPadLib.dylib` | 231 MB | **0.00x** |
-
-So moving code into embedded dynamic frameworks avoids the cost entirely, and
-an `XCTestCase` subclass hosted in such a library is still discovered and run
-(`scripts/11_experiment_discovery.sh`).
-
-**See [`ANALYSIS.md`](ANALYSIS.md) for the full breakdown**, including the
-`footprint`/`vmmap`/`heap`/`malloc_history` evidence, the mitigation, and what
-a fix would look like.
+| test adds one 64 MB `XCTAttachment`, `lifetime = .deleteOnSuccess`, test passes | ~421 MB | ~2.9x a payload that could never be needed |
 
 ## Bisecting across Xcode versions
 
@@ -166,25 +174,18 @@ change lands somewhere in 16.2...16.4. The 16.1/16.4 rows share a macOS
 build, a simulator runtime and a fixture, so the toolchain is the only
 variable between them.
 
-### Which binary is charged
-
-`scripts/07_experiment_test_bundle_size.sh` moves the same 256 MB of padding
-between the host app binary and the `.xctest` bundle binary:
+The regression also made the two binaries cost *different* amounts, which was
+not previously the case (`scripts/07_experiment_test_bundle_size.sh`):
 
 | Xcode | Padding in host app | Padding in .xctest bundle |
 |-------|---------------------|---------------------------|
 | 16.1  | 7.01x | 7.01x |
 | 26.2  | 9.00x / 9.02x | 10.01x / 10.02x |
 
-Both binaries are charged, so a large test bundle costs as much as a large
-app — slightly more per megabyte on current Xcode. In 16.1 the two were
-identical, so the regression added roughly two extra whole-binary reads for
-the app and three for the test bundle.
-
-The cost belongs to `xcodebuild` itself, not to the app under test: the
-simulated app's RSS is unchanged by padding its own binary (the inert
-`__TEXT` pages are mapped and never faulted in), while `xcodebuild` goes
-from 220 MB to ~2.5 GB.
+In 16.1 both binaries cost an identical 7.01x. By 26.2 the app costs 9x and
+the test bundle 10x — the signature of call sites being added, roughly two
+more whole-file reads for the app and three for the test bundle, rather than
+of any single read becoming more expensive.
 
 ## Files
 
