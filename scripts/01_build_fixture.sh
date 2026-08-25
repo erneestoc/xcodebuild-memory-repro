@@ -5,16 +5,33 @@
 source "$(dirname "$0")/common.sh"
 
 PAD_MB="${PAD_MB:-0}"
-FIXTURE="$WORK/fixture-pad${PAD_MB}"
+TEST_PAD_MB="${TEST_PAD_MB:-0}"
+if [[ "$TEST_PAD_MB" -gt 0 ]]; then
+  FIXTURE="$WORK/fixture-testpad${TEST_PAD_MB}"
+else
+  FIXTURE="$WORK/fixture-pad${PAD_MB}"
+fi
 APP="$FIXTURE/App.app"
 rm -rf "$FIXTURE"
 mkdir -p "$APP/PlugIns/MemTests.xctest"
 
+make_pad() { # <size_mb> <path>
+  mkfile -n "${1}m" "$2" 2>/dev/null \
+    || dd if=/dev/zero of="$2" bs=1048576 count="$1" status=none
+}
+
 pad_args=()
 if [[ "$PAD_MB" -gt 0 ]]; then
-  mkfile -n "${PAD_MB}m" "$FIXTURE/pad.bin" 2>/dev/null \
-    || dd if=/dev/zero of="$FIXTURE/pad.bin" bs=1048576 count="$PAD_MB" status=none
+  make_pad "$PAD_MB" "$FIXTURE/pad.bin"
   pad_args=(-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __pad -Xlinker "$FIXTURE/pad.bin")
+fi
+
+# Same inert padding, applied to the test bundle binary instead of the host
+# app, to separate "cost of the app under test" from "cost of the test code".
+test_pad_args=()
+if [[ "$TEST_PAD_MB" -gt 0 ]]; then
+  make_pad "$TEST_PAD_MB" "$FIXTURE/testpad.bin"
+  test_pad_args=(-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __pad -Xlinker "$FIXTURE/testpad.bin")
 fi
 
 echo "building host app (pad: ${PAD_MB} MB)..."
@@ -49,6 +66,7 @@ xcrun swiftc "$ROOT/Sources/Tests.swift" \
   -F "$PLATFORM_DIR/Developer/Library/Frameworks" \
   -I "$PLATFORM_DIR/Developer/usr/lib" \
   -L "$PLATFORM_DIR/Developer/usr/lib" -lXCTestSwiftSupport \
+  ${test_pad_args[@]+"${test_pad_args[@]}"} \
   -o "$APP/PlugIns/MemTests.xctest/MemTests"
 
 cat > "$APP/PlugIns/MemTests.xctest/Info.plist" <<PLIST
@@ -93,4 +111,5 @@ cat > "$FIXTURE/tests.xctestrun" <<PLIST
 </dict></plist>
 PLIST
 
-echo "fixture ready: $FIXTURE (App binary: $(du -h "$APP/App" | cut -f1))"
+echo "fixture ready: $FIXTURE (App binary: $(du -h "$APP/App" | cut -f1), \
+test binary: $(du -h "$APP/PlugIns/MemTests.xctest/MemTests" | cut -f1))"

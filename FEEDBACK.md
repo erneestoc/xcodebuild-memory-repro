@@ -16,8 +16,9 @@ Running iOS simulator tests via `xcodebuild test-without-building -xctestrun ...
 allocates host-side (macOS) memory proportional to inputs that should not
 require in-memory buffering:
 
-1. **~9x the host app binary size, before the app under test launches.**
-   The `xcodebuild` process's RSS grows ~9 MB per 1 MB of host app binary.
+1. **~9-10x the size of the Mach-O binaries in the session, before the app
+   under test launches.** The `xcodebuild` process's RSS grows ~9 MB per 1 MB
+   of host app binary, and ~10 MB per 1 MB of `.xctest` bundle binary.
    Timeline sampling shows the growth completes before the test host
    process appears in the simulator, and padding the binary with inert
    `__TEXT` bytes (no extra code, no extra dSYM content) reproduces it —
@@ -25,8 +26,16 @@ require in-memory buffering:
    (XCTOutOfProcessSymbolicationService) eagerly reading whole binaries
    into malloc'd memory instead of mmap'ing them and paging on demand.
    For a production app with a 400-500 MB binary this is 3.5-4.5 GB of
-   host memory per test session — before any test runs. The multiplier
-   was ~7x in Xcode 16.1 and is ~9x from 16.4 onward (see below).
+   host memory per test session — before any test runs, and the test
+   bundle's own size is charged on top at a slightly higher rate. The
+   multiplier was ~7x for both binaries in Xcode 16.1 (see below).
+
+   The cost is attached to the binaries themselves, not to the app process:
+   the padded bytes are inert `__TEXT` data that is never executed or read,
+   the simulated app's own RSS does not change when its binary grows, and
+   the entire increase appears in the host-side `xcodebuild` process
+   (220 MB -> 2528 MB at +256 MB of padding, with every other process in
+   the session flat).
 
 2. **~14-26x the bytes a test writes to stdout** (multiplier grows with
    volume), retained for the duration of the session.
@@ -68,6 +77,22 @@ For a 400 MB app binary that step alone is ~800 MB of extra host memory
 per concurrent test session. Xcode 16.2 and 16.3 have not been measured,
 so the change lands somewhere in 16.2...16.4.
 
+The regression also made the two binaries in a session cost *different*
+amounts, which was not previously the case. Padding the `.xctest` bundle
+binary instead of the host app binary, same 256 MB, same machine:
+
+| Xcode | Padding in host app | Padding in .xctest bundle |
+|-------|---------------------|---------------------------|
+| 16.1  | 7.01x               | 7.01x                     |
+| 26.2  | 9.00x / 9.02x       | 10.01x / 10.02x           |
+
+In 16.1 both binaries cost an identical 7x. In 26.2 the host app costs 9x
+and the test bundle 10x — that is, the change added roughly two extra
+whole-binary reads for the app and three for the test bundle. Test bundle
+size therefore matters more than app size per megabyte, which is
+significant for projects whose test bundles statically link large amounts
+of code.
+
 In every version the growth completes ~1 second into the run, before the
 test body executes, which is consistent with it happening during test
 session setup rather than during test execution.
@@ -93,6 +118,9 @@ processes. Each experiment isolates one variable:
 - `scripts/05_experiment_attachments.sh` — the test adds one N MB
   attachment with `lifetime = .deleteOnSuccess` and passes; peak still
   grows ~1.4-3x N.
+- `scripts/07_experiment_test_bundle_size.sh` — moves the same 256 MB of
+  padding between the host app binary and the `.xctest` bundle binary,
+  showing the multiplier applies to both (9x and 10x respectively on 26.2).
 
 ## Expected results
 
@@ -106,8 +134,9 @@ processes. Each experiment isolates one variable:
 
 ## Actual results
 
-Peak host-side RSS per session: `~235 MB + ~9x(host binary bytes) +
-~14-26x(stdout bytes) + ~1.4-3x(attachment bytes)`, concentrated in the
-`xcodebuild` process itself. The binary-size term was ~7x as recently as
-Xcode 16.1, so this has regressed rather than improved. Full per-case logs, per-process breakdowns,
+Peak host-side RSS per session: `~235 MB + ~9x(host app binary bytes) +
+~10x(.xctest binary bytes) + ~14-26x(stdout bytes) +
+~1.4-3x(attachment bytes)`, concentrated in the `xcodebuild` process
+itself. Both binary terms were ~7x as recently as Xcode 16.1, so this has
+regressed rather than improved. Full per-case logs, per-process breakdowns,
 and RSS timelines are produced by the repro scripts under `results/`.

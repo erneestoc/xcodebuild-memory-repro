@@ -68,6 +68,7 @@ def main():
     peak_total_kb = 0
     peak_breakdown = []
     proc_peaks = {}  # name -> peak kb
+    other_peaks = {}  # name -> peak kb, for new processes outside the tracked set
     timeline = []
 
     while child.poll() is None:
@@ -87,6 +88,15 @@ def main():
             breakdown.append((rss, name))
             proc_peaks[name] = max(proc_peaks.get(name, 0), rss)
 
+        # Everything else the run brought into existence — simulator-side
+        # processes (the app under test, testmanagerd, ...) are not
+        # descendants of xcodebuild, so they would otherwise go unseen.
+        for pid, (_, rss, args) in procs.items():
+            if pid in preexisting or pid in tracked:
+                continue
+            name = args.split()[0].rsplit("/", 1)[-1]
+            other_peaks[name] = max(other_peaks.get(name, 0), rss)
+
         timeline.append((time.time() - start, total_kb))
         if total_kb > peak_total_kb:
             peak_total_kb = total_kb
@@ -105,6 +115,9 @@ def main():
         print(f"MEASURE   {rss / 1024:8.0f} MB  {name}")
     print("MEASURE per_process_peaks:")
     for name, kb in sorted(proc_peaks.items(), key=lambda kv: -kv[1])[:8]:
+        print(f"MEASURE   {kb / 1024:8.0f} MB  {name}")
+    print("MEASURE untracked_new_process_peaks:")
+    for name, kb in sorted(other_peaks.items(), key=lambda kv: -kv[1])[:8]:
         print(f"MEASURE   {kb / 1024:8.0f} MB  {name}")
     print(f"MEASURE command_exit={exit_code}")
     return exit_code

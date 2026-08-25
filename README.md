@@ -90,12 +90,35 @@ change lands somewhere in 16.2...16.4. The 16.1/16.4 rows share a macOS
 build, a simulator runtime and a fixture, so the toolchain is the only
 variable between them.
 
+### Which binary is charged
+
+`scripts/07_experiment_test_bundle_size.sh` moves the same 256 MB of padding
+between the host app binary and the `.xctest` bundle binary:
+
+| Xcode | Padding in host app | Padding in .xctest bundle |
+|-------|---------------------|---------------------------|
+| 16.1  | 7.01x | 7.01x |
+| 26.2  | 9.00x / 9.02x | 10.01x / 10.02x |
+
+Both binaries are charged, so a large test bundle costs as much as a large
+app — slightly more per megabyte on current Xcode. In 16.1 the two were
+identical, so the regression added roughly two extra whole-binary reads for
+the app and three for the test bundle.
+
+The cost belongs to `xcodebuild` itself, not to the app under test: the
+simulated app's RSS is unchanged by padding its own binary (the inert
+`__TEXT` pages are mapped and never faulted in), while `xcodebuild` goes
+from 220 MB to ~2.5 GB.
+
 ## Files
 
 - `Sources/AppMain.swift`, `Sources/Tests.swift` — the fixture app + tests
 - `scripts/01_build_fixture.sh` — builds app/bundle/xctestrun (`PAD_MB` pads the app binary)
 - `scripts/02_run_case.sh` — one measured run (`CONSOLE_MB`, `ATTACH_MB`, `ONLY_TEST` knobs)
 - `scripts/03..05_experiment_*.sh` — the three scaling experiments
+- `scripts/07_experiment_test_bundle_size.sh` — app binary vs `.xctest` binary
 - `scripts/06_bisect_version.sh` — per-Xcode-version measurement for bisecting the regression
-- `scripts/measure_rss.py` — samples the process tree + session helpers, tracks peak
+- `scripts/measure_rss.py` — samples the process tree + session helpers, tracks
+  peak, and separately reports new processes outside the tracked set (the
+  simulated app, `testmanagerd`, ...) so nothing material goes unseen
 - `FEEDBACK.md` — the Feedback Assistant report this repository accompanies

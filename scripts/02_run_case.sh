@@ -8,13 +8,18 @@
 source "$(dirname "$0")/common.sh"
 
 PAD_MB="${PAD_MB:-0}"
+TEST_PAD_MB="${TEST_PAD_MB:-0}"
 ONLY_TEST="${ONLY_TEST:-MemTests/MemTests/testTrivial}"
 CONSOLE_MB="${CONSOLE_MB:-0}"
 ATTACH_MB="${ATTACH_MB:-0}"
 LABEL="${LABEL:-pad${PAD_MB}_console${CONSOLE_MB}_attach${ATTACH_MB}}"
 
-FIXTURE="$WORK/fixture-pad${PAD_MB}"
-[[ -d "$FIXTURE" ]] || { echo "fixture missing; run: PAD_MB=$PAD_MB scripts/01_build_fixture.sh" >&2; exit 1; }
+if [[ "$TEST_PAD_MB" -gt 0 ]]; then
+  FIXTURE="$WORK/fixture-testpad${TEST_PAD_MB}"
+else
+  FIXTURE="$WORK/fixture-pad${PAD_MB}"
+fi
+[[ -d "$FIXTURE" ]] || { echo "fixture missing; run: PAD_MB=$PAD_MB TEST_PAD_MB=$TEST_PAD_MB scripts/01_build_fixture.sh" >&2; exit 1; }
 
 UDID=$(pick_simulator)
 RUN_DIR="$WORK/run-$LABEL"
